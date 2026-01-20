@@ -32,6 +32,7 @@ A comprehensive web-based ERP application for small to medium-sized businesses, 
 1. **Install dependencies**:
    ```bash
    npm install
+   npm install react-to-print
    ```
 
 2. **Configure environment variables**:
