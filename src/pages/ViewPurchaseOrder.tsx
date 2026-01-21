@@ -6,10 +6,10 @@ import { supabase } from '../lib/supabase';
 
 interface PurchaseOrder {
     id: string;
-    order_number: string;
+    po_number: string;
     vendor_name: string;
     date: string;
-    total_amount: number;
+    total: number;
     status: string;
     notes: string;
     created_at: string;
@@ -20,7 +20,7 @@ interface PurchaseOrderItem {
     item_name: string;
     quantity: number;
     unit_price: number;
-    amount: number;
+    total: number;
 }
 
 export const ViewPurchaseOrder = () => {
@@ -50,15 +50,28 @@ export const ViewPurchaseOrder = () => {
             if (poError) throw poError;
             setPo(poData);
 
-            // Fetch PO items
+            // Fetch PO items with item details join
             const { data: itemsData, error: itemsError } = await supabase
                 .from('purchase_order_items')
-                .select('*')
+                .select(`
+                    *,
+                    items (
+                        name,
+                        description
+                    )
+                `)
                 .eq('purchase_order_id', id)
                 .order('id');
 
             if (itemsError) throw itemsError;
-            setItems(itemsData || []);
+
+            // Map the data to include item name from join or fallback to item_name field
+            const mappedItems = (itemsData || []).map(item => ({
+                ...item,
+                item_name: item.items?.name || item.item_name || 'Unknown Item'
+            }));
+
+            setItems(mappedItems);
         } catch (error) {
             console.error('Error fetching purchase order:', error);
             alert('Failed to load purchase order');
@@ -102,7 +115,7 @@ export const ViewPurchaseOrder = () => {
                     </Button>
                     <div>
                         <h1 className="text-3xl font-bold text-gray-900">Purchase Order Details</h1>
-                        <p className="text-gray-600 mt-1">{po.order_number}</p>
+                        <p className="text-gray-600 mt-1">{po.po_number}</p>
                     </div>
                 </div>
             </div>
@@ -113,14 +126,14 @@ export const ViewPurchaseOrder = () => {
                     <div>
                         <h2 className="text-2xl font-bold text-purple-600 mb-2">PURCHASE ORDER</h2>
                         <p className="text-sm text-gray-600">PO Number:</p>
-                        <p className="text-lg font-semibold">{po.order_number}</p>
+                        <p className="text-lg font-semibold">{po.po_number}</p>
                     </div>
                     <div className="text-right">
                         <p className="text-sm font-semibold text-gray-600">Status:</p>
                         <span
                             className={`px-3 py-1 rounded-full text-sm font-semibold ${po.status === 'received'
-                                    ? 'bg-green-100 text-green-800'
-                                    : 'bg-yellow-100 text-yellow-800'
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-yellow-100 text-yellow-800'
                                 }`}
                         >
                             {po.status}
@@ -149,7 +162,7 @@ export const ViewPurchaseOrder = () => {
                             <th className="text-left py-3 text-sm font-semibold">ITEM</th>
                             <th className="text-right py-3 text-sm font-semibold">QTY</th>
                             <th className="text-right py-3 text-sm font-semibold">UNIT PRICE</th>
-                            <th className="text-right py-3 text-sm font-semibold">AMOUNT</th>
+                            <th className="text-right py-3 text-sm font-semibold">TOTAL</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -158,7 +171,7 @@ export const ViewPurchaseOrder = () => {
                                 <td className="py-3">{item.item_name}</td>
                                 <td className="py-3 text-right">{item.quantity}</td>
                                 <td className="py-3 text-right">${item.unit_price.toFixed(2)}</td>
-                                <td className="py-3 text-right font-semibold">${item.amount.toFixed(2)}</td>
+                                <td className="py-3 text-right font-semibold">${item.total.toFixed(2)}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -169,7 +182,7 @@ export const ViewPurchaseOrder = () => {
                     <div className="w-80">
                         <div className="flex justify-between pt-3 border-t-2 border-gray-300">
                             <span className="text-xl font-bold">TOTAL:</span>
-                            <span className="text-xl font-bold text-purple-600">${po.total_amount.toFixed(2)}</span>
+                            <span className="text-xl font-bold text-purple-600">${po.total.toFixed(2)}</span>
                         </div>
                     </div>
                 </div>

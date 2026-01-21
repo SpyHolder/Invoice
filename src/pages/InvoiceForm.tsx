@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Plus, Trash2, ArrowLeft } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { supabase, Customer, Item } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 
 interface LineItem {
     id: string;
@@ -20,10 +21,13 @@ interface LineItem {
 
 export const InvoiceForm = () => {
     const { user } = useAuth();
+    const { id } = useParams();
     const navigate = useNavigate();
+    const { showToast } = useToast();
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [items, setItems] = useState<Item[]>([]);
     const [loading, setLoading] = useState(false);
+    const [isEditMode, setIsEditMode] = useState(false);
 
     const [formData, setFormData] = useState({
         customer_id: '',
@@ -53,6 +57,14 @@ export const InvoiceForm = () => {
         fetchItems();
     }, []);
 
+    useEffect(() => {
+        // Only load invoice after items are fetched and we have an ID
+        if (id && items.length > 0) {
+            setIsEditMode(true);
+            loadInvoice(id);
+        }
+    }, [id, items.length]);
+
     const fetchCustomers = async () => {
         const { data } = await supabase.from('customers').select('*').order('name');
         if (data) setCustomers(data);
@@ -61,6 +73,73 @@ export const InvoiceForm = () => {
     const fetchItems = async () => {
         const { data } = await supabase.from('items').select('*').order('name');
         if (data) setItems(data);
+    };
+
+    const loadInvoice = async (invoiceId: string) => {
+        setLoading(true);
+        try {
+            // Load invoice header
+            const { data: invoice, error: invoiceError } = await supabase
+                .from('invoices')
+                .select('*')
+                .eq('id', invoiceId)
+                .single();
+
+            if (invoiceError) throw invoiceError;
+
+            if (invoice) {
+                setFormData({
+                    customer_id: invoice.customer_id,
+                    date: invoice.date,
+                    due_date: invoice.due_date,
+                    notes: invoice.notes || '',
+                    discount: invoice.discount,
+                    tax: invoice.tax,
+                });
+
+                // Load invoice items
+                const { data: invoiceItems, error: itemsError } = await supabase
+                    .from('invoice_items')
+                    .select('*')
+                    .eq('invoice_id', invoiceId);
+
+                if (itemsError) throw itemsError;
+
+                if (invoiceItems && invoiceItems.length > 0) {
+                    const loadedItems = invoiceItems.map((item, index) => {
+                        // Try to find matching item by name to populate item_id
+                        const matchingItem = items.find(i => i.name === item.item_name);
+
+                        console.log('Loading invoice item:', {
+                            item_name: item.item_name,
+                            matchingItem: matchingItem,
+                            item_id_from_db: item.item_id,
+                            final_item_id: matchingItem?.id || item.item_id || ''
+                        });
+
+                        return {
+                            id: `loaded-${index}`,
+                            item_id: matchingItem?.id || item.item_id || '', // Prioritize matched item
+                            item_name: item.item_name,
+                            description: item.description || '',
+                            quantity: item.quantity,
+                            unit_price: item.unit_price,
+                            discount: item.discount,
+                            tax_rate: item.tax_rate,
+                            total: item.total,
+                        };
+                    });
+                    console.log('Setting line items:', loadedItems);
+                    setLineItems(loadedItems);
+                }
+            }
+        } catch (error: any) {
+            console.error('Error loading invoice:', error);
+            showToast('Failed to load invoice', 'error');
+            navigate('/invoices');
+        } finally {
+            setLoading(false);
+        }
     };
 
     const addLineItem = () => {
@@ -132,12 +211,11 @@ export const InvoiceForm = () => {
         try {
             const totals = calculateTotals();
 
-            // Create invoice
-            const { data: invoice, error: invoiceError } = await supabase
-                .from('invoices')
-                .insert([
-                    {
-                        invoice_number: 'INV-' + Date.now(),
+            if (isEditMode && id) {
+                // Update existing invoice
+                const { error: invoiceError } = await supabase
+                    .from('invoices')
+                    .update({
                         customer_id: formData.customer_id,
                         date: formData.date,
                         due_date: formData.due_date,
@@ -146,34 +224,79 @@ export const InvoiceForm = () => {
                         tax: formData.tax,
                         total: totals.total,
                         notes: formData.notes,
-                        status: 'unpaid',
-                    },
-                ])
-                .select()
-                .single();
+                    })
+                    .eq('id', id);
 
-            if (invoiceError) throw invoiceError;
+                if (invoiceError) throw invoiceError;
 
-            // Create invoice items
-            const itemsToInsert = lineItems.map((item) => ({
-                invoice_id: invoice.id,
-                item_name: item.item_name,
-                description: item.description,
-                quantity: item.quantity,
-                unit_price: item.unit_price,
-                discount: item.discount,
-                tax_rate: item.tax_rate,
-                total: item.total,
-            }));
+                // Delete existing items
+                await supabase.from('invoice_items').delete().eq('invoice_id', id);
 
-            const { error: itemsError } = await supabase.from('invoice_items').insert(itemsToInsert);
+                // Insert updated items
+                const itemsToInsert = lineItems.map((item) => ({
+                    invoice_id: id,
+                    item_id: item.item_id,
+                    item_name: item.item_name,
+                    description: item.description,
+                    quantity: item.quantity,
+                    unit_price: item.unit_price,
+                    discount: item.discount,
+                    tax_rate: item.tax_rate,
+                    total: item.total,
+                }));
 
-            if (itemsError) throw itemsError;
+                const { error: itemsError } = await supabase.from('invoice_items').insert(itemsToInsert);
+
+                if (itemsError) throw itemsError;
+
+                showToast('Invoice updated successfully!', 'success');
+            } else {
+                // Create invoice
+                const { data: invoice, error: invoiceError } = await supabase
+                    .from('invoices')
+                    .insert([
+                        {
+                            invoice_number: 'INV-' + Date.now(),
+                            customer_id: formData.customer_id,
+                            date: formData.date,
+                            due_date: formData.due_date,
+                            subtotal: totals.subtotal,
+                            discount: formData.discount,
+                            tax: formData.tax,
+                            total: totals.total,
+                            notes: formData.notes,
+                            status: 'unpaid',
+                        },
+                    ])
+                    .select()
+                    .single();
+
+                if (invoiceError) throw invoiceError;
+
+                // Create invoice items
+                const itemsToInsert = lineItems.map((item) => ({
+                    invoice_id: invoice.id,
+                    item_id: item.item_id,
+                    item_name: item.item_name,
+                    description: item.description,
+                    quantity: item.quantity,
+                    unit_price: item.unit_price,
+                    discount: item.discount,
+                    tax_rate: item.tax_rate,
+                    total: item.total,
+                }));
+
+                const { error: itemsError } = await supabase.from('invoice_items').insert(itemsToInsert);
+
+                if (itemsError) throw itemsError;
+
+                showToast('Invoice created successfully!', 'success');
+            }
 
             navigate('/invoices');
-        } catch (error) {
-            console.error('Error creating invoice:', error);
-            alert('Failed to create invoice');
+        } catch (error: any) {
+            console.error('Error saving invoice:', error);
+            showToast(error.message || 'Failed to save invoice', 'error');
         } finally {
             setLoading(false);
         }
@@ -190,8 +313,8 @@ export const InvoiceForm = () => {
                         Back
                     </Button>
                     <div>
-                        <h1 className="text-3xl font-bold text-gray-900">Create Invoice</h1>
-                        <p className="text-gray-600 mt-1">Add invoice details and line items</p>
+                        <h1 className="text-3xl font-bold text-gray-900">{isEditMode ? 'Edit' : 'Create'} Invoice</h1>
+                        <p className="text-gray-600 mt-1">{isEditMode ? 'Update' : 'Add'} invoice details and line items</p>
                     </div>
                 </div>
             </div>
@@ -405,7 +528,7 @@ export const InvoiceForm = () => {
                         Cancel
                     </Button>
                     <Button type="submit" disabled={loading || !formData.customer_id}>
-                        {loading ? 'Creating...' : 'Create Invoice'}
+                        {loading ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Invoice' : 'Create Invoice')}
                     </Button>
                 </div>
             </form>

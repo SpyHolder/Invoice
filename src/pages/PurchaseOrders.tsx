@@ -5,10 +5,12 @@ import { Button } from '../components/ui/Button';
 import { supabase, PurchaseOrder } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from '../contexts/ToastContext';
 
 export const PurchaseOrders = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
+    const { showToast } = useToast();
     const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -31,8 +33,6 @@ export const PurchaseOrders = () => {
     };
 
     const markAsReceived = async (po: PurchaseOrder) => {
-        if (!confirm('Mark this purchase order as received? This will update stock quantities.')) return;
-
         try {
             // Get PO items
             const { data: poItems, error: itemsError } = await supabase
@@ -70,26 +70,28 @@ export const PurchaseOrders = () => {
                 .update({ status: 'received' })
                 .eq('id', po.id);
 
-            alert('Purchase order marked as received and stock updated!');
+            showToast('Purchase order marked as received and stock updated!', 'success');
             fetchPurchaseOrders();
         } catch (error) {
             console.error('Error marking as received:', error);
-            alert('Failed to mark as received');
+            showToast('Failed to mark as received', 'error');
         }
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm('Are you sure you want to delete this purchase order?')) return;
-
         try {
             // Delete PO items first
             await supabase.from('purchase_order_items').delete().eq('purchase_order_id', id);
             // Delete PO
-            await supabase.from('purchase_orders').delete().eq('id', id);
+            const { error } = await supabase.from('purchase_orders').delete().eq('id', id);
+
+            if (error) throw error;
+
+            showToast('Purchase order deleted successfully', 'success');
             fetchPurchaseOrders();
         } catch (error) {
             console.error('Error deleting purchase order:', error);
-            alert('Failed to delete purchase order');
+            showToast('Failed to delete purchase order', 'error');
         }
     };
 
@@ -131,7 +133,7 @@ export const PurchaseOrders = () => {
                                     <tr key={po.id}>
                                         <td className="font-medium">{po.vendor_name}</td>
                                         <td>{new Date(po.date).toLocaleDateString()}</td>
-                                        <td>${po.total_amount.toFixed(2)}</td>
+                                        <td>${po.total.toFixed(2)}</td>
                                         <td>
                                             <span
                                                 className={`px-3 py-1 rounded-full text-xs font-semibold ${po.status === 'received'
