@@ -157,7 +157,7 @@ export const Items = () => {
                         placeholder="Search items by name, SKU, or category..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="input pl-10"
+                        className="input bg-white pl-10"
                     />
                 </div>
             </Card>

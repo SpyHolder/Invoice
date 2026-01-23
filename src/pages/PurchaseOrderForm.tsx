@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Plus, Trash2, ArrowLeft } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { supabase, Item } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 
 interface LineItem {
     id: string;
@@ -12,14 +13,17 @@ interface LineItem {
     item_name: string;
     quantity: number;
     unit_price: number;
-    amount: number;
+    total: number;
 }
 
 export const PurchaseOrderForm = () => {
     const { user } = useAuth();
+    const { id } = useParams();
     const navigate = useNavigate();
+    const { showToast } = useToast();
     const [items, setItems] = useState<Item[]>([]);
     const [loading, setLoading] = useState(false);
+    const [isEditMode, setIsEditMode] = useState(false);
 
     const [formData, setFormData] = useState({
         vendor_name: '',
@@ -34,17 +38,69 @@ export const PurchaseOrderForm = () => {
             item_name: '',
             quantity: 1,
             unit_price: 0,
-            amount: 0,
+            total: 0,
         },
     ]);
 
     useEffect(() => {
         fetchItems();
-    }, []);
+        if (id) {
+            setIsEditMode(true);
+            loadPurchaseOrder(id);
+        }
+    }, [id]);
 
     const fetchItems = async () => {
         const { data } = await supabase.from('items').select('*').order('name');
         if (data) setItems(data);
+    };
+
+    const loadPurchaseOrder = async (poId: string) => {
+        setLoading(true);
+        try {
+            // Load PO header
+            const { data: po, error: poError } = await supabase
+                .from('purchase_orders')
+                .select('*')
+                .eq('id', poId)
+                .single();
+
+            if (poError) throw poError;
+
+            if (po) {
+                setFormData({
+                    vendor_name: po.vendor_name,
+                    date: po.date,
+                    notes: po.notes || '',
+                });
+
+                // Load PO items
+                const { data: poItems, error: itemsError } = await supabase
+                    .from('purchase_order_items')
+                    .select('*')
+                    .eq('purchase_order_id', poId);
+
+                if (itemsError) throw itemsError;
+
+                if (poItems && poItems.length > 0) {
+                    const loadedItems = poItems.map((item, index) => ({
+                        id: `loaded-${index}`,
+                        item_id: item.item_id,
+                        item_name: '', // Will be populated when items are fetched
+                        quantity: item.quantity,
+                        unit_price: item.unit_price,
+                        total: item.total,
+                    }));
+                    setLineItems(loadedItems);
+                }
+            }
+        } catch (error: any) {
+            console.error('Error loading purchase order:', error);
+            showToast('Failed to load purchase order', 'error');
+            navigate('/purchase-orders');
+        } finally {
+            setLoading(false);
+        }
     };
 
     const addLineItem = () => {
@@ -56,7 +112,7 @@ export const PurchaseOrderForm = () => {
                 item_name: '',
                 quantity: 1,
                 unit_price: 0,
-                amount: 0,
+                total: 0,
             },
         ]);
     };
@@ -82,8 +138,8 @@ export const PurchaseOrderForm = () => {
                         }
                     }
 
-                    // Calculate amount
-                    updated.amount = updated.quantity * updated.unit_price;
+                    // Calculate total
+                    updated.total = updated.quantity * updated.unit_price;
                     return updated;
                 }
                 return item;
@@ -92,7 +148,7 @@ export const PurchaseOrderForm = () => {
     };
 
     const calculateTotal = () => {
-        return lineItems.reduce((sum, item) => sum + item.amount, 0);
+        return lineItems.reduce((sum, item) => sum + item.total, 0);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -103,38 +159,75 @@ export const PurchaseOrderForm = () => {
         try {
             const total = calculateTotal();
 
-            const { data: purchaseOrder, error: poError } = await supabase
-                .from('purchase_orders')
-                .insert([
-                    {
+            if (isEditMode && id) {
+                // Update existing purchase order
+                const { error: poError } = await supabase
+                    .from('purchase_orders')
+                    .update({
                         vendor_name: formData.vendor_name,
                         date: formData.date,
-                        total_amount: total,
+                        total: total,
                         notes: formData.notes,
-                        status: 'pending',
-                    },
-                ])
-                .select()
-                .single();
+                    })
+                    .eq('id', id);
 
-            if (poError) throw poError;
+                if (poError) throw poError;
 
-            const itemsToInsert = lineItems.map((item) => ({
-                purchase_order_id: purchaseOrder.id,
-                item_id: item.item_id,
-                quantity: item.quantity,
-                unit_price: item.unit_price,
-                amount: item.amount,
-            }));
+                // Delete existing items
+                await supabase.from('purchase_order_items').delete().eq('purchase_order_id', id);
 
-            const { error: itemsError } = await supabase.from('purchase_order_items').insert(itemsToInsert);
+                // Insert updated items
+                const itemsToInsert = lineItems.map((item) => ({
+                    purchase_order_id: id,
+                    item_id: item.item_id,
+                    quantity: item.quantity,
+                    unit_price: item.unit_price,
+                    total: item.total,
+                }));
 
-            if (itemsError) throw itemsError;
+                const { error: itemsError } = await supabase.from('purchase_order_items').insert(itemsToInsert);
+
+                if (itemsError) throw itemsError;
+
+                showToast('Purchase order updated successfully!', 'success');
+            } else {
+                // Create new purchase order
+                const { data: purchaseOrder, error: poError } = await supabase
+                    .from('purchase_orders')
+                    .insert([
+                        {
+                            vendor_name: formData.vendor_name,
+                            po_number: 'PO-' + Date.now(),
+                            date: formData.date,
+                            total: total,
+                            notes: formData.notes,
+                            status: 'pending',
+                        },
+                    ])
+                    .select()
+                    .single();
+
+                if (poError) throw poError;
+
+                const itemsToInsert = lineItems.map((item) => ({
+                    purchase_order_id: purchaseOrder.id,
+                    item_id: item.item_id,
+                    quantity: item.quantity,
+                    unit_price: item.unit_price,
+                    total: item.total,
+                }));
+
+                const { error: itemsError } = await supabase.from('purchase_order_items').insert(itemsToInsert);
+
+                if (itemsError) throw itemsError;
+
+                showToast('Purchase order created successfully!', 'success');
+            }
 
             navigate('/purchase-orders');
-        } catch (error) {
-            console.error('Error creating purchase order:', error);
-            alert('Failed to create purchase order');
+        } catch (error: any) {
+            console.error('Error saving purchase order:', error);
+            showToast(error.message || 'Failed to save purchase order', 'error');
         } finally {
             setLoading(false);
         }
@@ -151,8 +244,8 @@ export const PurchaseOrderForm = () => {
                         Back
                     </Button>
                     <div>
-                        <h1 className="text-3xl font-bold text-gray-900">Create Purchase Order</h1>
-                        <p className="text-gray-600 mt-1">Add purchase order details and items</p>
+                        <h1 className="text-3xl font-bold text-gray-900">{isEditMode ? 'Edit' : 'Create'} Purchase Order</h1>
+                        <p className="text-gray-600 mt-1">{isEditMode ? 'Update' : 'Add'} purchase order details and items</p>
                     </div>
                 </div>
             </div>
@@ -167,7 +260,8 @@ export const PurchaseOrderForm = () => {
                                 type="text"
                                 value={formData.vendor_name}
                                 onChange={(e) => setFormData({ ...formData, vendor_name: e.target.value })}
-                                className="input w-full"
+                                // Ubah disini: ditambahkan bg-white
+                                className="input w-full bg-white"
                                 placeholder="Enter vendor name"
                                 required
                             />
@@ -178,7 +272,8 @@ export const PurchaseOrderForm = () => {
                                 type="date"
                                 value={formData.date}
                                 onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                                className="input w-full"
+                                // Ubah disini: ditambahkan bg-white
+                                className="input w-full bg-white"
                                 required
                             />
                         </div>
@@ -187,7 +282,8 @@ export const PurchaseOrderForm = () => {
                             <textarea
                                 value={formData.notes}
                                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                                className="input w-full"
+                                // Ubah disini: ditambahkan bg-white
+                                className="input w-full bg-white"
                                 rows={3}
                                 placeholder="Optional notes"
                             />
@@ -211,7 +307,7 @@ export const PurchaseOrderForm = () => {
                                     <th>Item</th>
                                     <th>Quantity</th>
                                     <th>Unit Price</th>
-                                    <th>Amount</th>
+                                    <th>Total</th>
                                     <th>Action</th>
                                 </tr>
                             </thead>
@@ -222,7 +318,8 @@ export const PurchaseOrderForm = () => {
                                             <select
                                                 value={item.item_id}
                                                 onChange={(e) => updateLineItem(item.id, 'item_id', e.target.value)}
-                                                className="input w-full min-w-[200px]"
+                                                // Ubah disini: ditambahkan bg-white
+                                                className="input w-full min-w-[200px] bg-white"
                                                 required
                                             >
                                                 <option value="">Select Item</option>
@@ -238,7 +335,8 @@ export const PurchaseOrderForm = () => {
                                                 type="number"
                                                 value={item.quantity}
                                                 onChange={(e) => updateLineItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                                                className="input w-24"
+                                                // Ubah disini: ditambahkan bg-white
+                                                className="input w-24 bg-white"
                                                 min="1"
                                                 required
                                             />
@@ -248,13 +346,14 @@ export const PurchaseOrderForm = () => {
                                                 type="number"
                                                 value={item.unit_price}
                                                 onChange={(e) => updateLineItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                                                className="input w-32"
+                                                // Ubah disini: ditambahkan bg-white
+                                                className="input w-32 bg-white"
                                                 step="0.01"
                                                 min="0"
                                                 required
                                             />
                                         </td>
-                                        <td className="font-semibold">${item.amount.toFixed(2)}</td>
+                                        <td className="font-semibold">${item.total.toFixed(2)}</td>
                                         <td>
                                             <button
                                                 type="button"
@@ -284,7 +383,7 @@ export const PurchaseOrderForm = () => {
                         Cancel
                     </Button>
                     <Button type="submit" disabled={loading || !formData.vendor_name}>
-                        {loading ? 'Creating...' : 'Create Purchase Order'}
+                        {loading ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Purchase Order' : 'Create Purchase Order')}
                     </Button>
                 </div>
             </form>

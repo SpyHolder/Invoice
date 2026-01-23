@@ -5,10 +5,12 @@ import { Button } from '../components/ui/Button';
 import { supabase, Invoice } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from '../contexts/ToastContext';
 
 export const Invoices = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
+    const { showToast } = useToast();
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -43,17 +45,19 @@ export const Invoices = () => {
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm('Are you sure you want to delete this invoice?')) return;
-
         try {
             // Delete invoice items first
             await supabase.from('invoice_items').delete().eq('invoice_id', id);
             // Delete invoice
-            await supabase.from('invoices').delete().eq('id', id);
+            const { error } = await supabase.from('invoices').delete().eq('id', id);
+
+            if (error) throw error;
+
+            showToast('Invoice deleted successfully', 'success');
             fetchInvoices();
         } catch (error) {
             console.error('Error deleting invoice:', error);
-            alert('Failed to delete invoice');
+            showToast('Failed to delete invoice', 'error');
         }
     };
 
@@ -116,8 +120,8 @@ export const Invoices = () => {
                                                 <button
                                                     onClick={() => toggleStatus(invoice)}
                                                     className={`px-2 py-1 rounded text-xs font-semibold ${invoice.status === 'paid'
-                                                            ? 'bg-green-100 text-green-800'
-                                                            : 'bg-red-100 text-red-800'
+                                                        ? 'bg-green-100 text-green-800'
+                                                        : 'bg-red-100 text-red-800'
                                                         }`}
                                                     title="Toggle Status"
                                                 >

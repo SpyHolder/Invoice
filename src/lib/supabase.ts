@@ -58,6 +58,7 @@ export interface Invoice {
 export interface InvoiceItem {
     id: string;
     invoice_id: string;
+    item_id?: string;
     item_name: string;
     description: string | null;
     quantity: number;
@@ -87,6 +88,7 @@ export interface Quotation {
 export interface QuotationItem {
     id: string;
     quotation_id: string;
+    item_id?: string;
     item_name: string;
     description: string | null;
     quantity: number;
@@ -101,7 +103,7 @@ export interface PurchaseOrder {
     vendor_name: string;
     date: string;
     status: 'pending' | 'received' | 'cancelled';
-    total_amount: number;
+    total: number;
     notes: string | null;
     created_at: string;
 }
@@ -113,6 +115,6 @@ export interface PurchaseOrderItem {
     item_name: string;
     quantity: number;
     unit_price: number;
-    amount: number;
+    total: number;
     item?: Item;
 }

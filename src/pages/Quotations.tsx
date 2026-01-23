@@ -5,10 +5,12 @@ import { Button } from '../components/ui/Button';
 import { supabase, Quotation } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from '../contexts/ToastContext';
 
 export const Quotations = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
+    const { showToast } = useToast();
     const [quotations, setQuotations] = useState<Quotation[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -34,80 +36,94 @@ export const Quotations = () => {
     };
 
     const convertToInvoice = async (quotation: Quotation) => {
-        if (!confirm('Convert this quotation to an invoice?')) return;
+        try {
+            // Fetch quotation items
+            const { data: quotationItems } = await supabase
+                .from('quotation_items')
+                .select('*')
+                .eq('quotation_id', quotation.id);
 
-        // Fetch quotation items
-        const { data: quotationItems } = await supabase
-            .from('quotation_items')
-            .select('*')
-            .eq('quotation_id', quotation.id);
+            if (!quotationItems) {
+                showToast('No items found in quotation', 'error');
+                return;
+            }
 
-        if (!quotationItems) return;
-
-        // Create invoice
-        const { data: newInvoice, error } = await supabase
-            .from('invoices')
-            .insert([
-                {
-                    invoice_number: 'INV-' + Date.now(),
-                    customer_id: quotation.customer_id,
-                    date: new Date().toISOString().split('T')[0],
-                    due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                    status: 'unpaid',
-                    subtotal: quotation.subtotal,
-                    discount: quotation.discount,
-                    tax: quotation.tax,
-                    total: quotation.total,
-                    notes: quotation.notes,
-                },
-            ])
-            .select()
-            .single();
-
-        if (error || !newInvoice) return;
-
-        // Create invoice items and deduct stock
-        for (const item of quotationItems) {
-            await supabase.from('invoice_items').insert([
-                {
-                    invoice_id: newInvoice.id,
-                    item_id: item.item_id,
-                    quantity: item.quantity,
-                    unit_price: item.unit_price,
-                    amount: item.amount,
-                },
-            ]);
-
-            // Deduct stock
-            const { data: currentItem } = await supabase
-                .from('items')
-                .select('stock')
-                .eq('id', item.item_id)
+            // Create invoice
+            const { data: newInvoice, error } = await supabase
+                .from('invoices')
+                .insert([
+                    {
+                        invoice_number: 'INV-' + Date.now(),
+                        customer_id: quotation.customer_id,
+                        date: new Date().toISOString().split('T')[0],
+                        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                        status: 'unpaid',
+                        subtotal: quotation.subtotal,
+                        discount: quotation.discount,
+                        tax: quotation.tax,
+                        total: quotation.total,
+                        notes: quotation.notes,
+                    },
+                ])
+                .select()
                 .single();
 
-            if (currentItem) {
-                await supabase
-                    .from('items')
-                    .update({ stock: currentItem.stock - item.quantity })
-                    .eq('id', item.item_id);
+            if (error || !newInvoice) {
+                showToast('Failed to create invoice', 'error');
+                return;
             }
-        }
 
-        navigate('/invoices');
+            // Create invoice items and deduct stock
+            for (const item of quotationItems) {
+                await supabase.from('invoice_items').insert([
+                    {
+                        invoice_id: newInvoice.id,
+                        item_id: item.item_id,
+                        quantity: item.quantity,
+                        unit_price: item.unit_price,
+                        amount: item.amount,
+                    },
+                ]);
+
+                // Deduct stock
+                if (item.item_id) {
+                    const { data: currentItem } = await supabase
+                        .from('items')
+                        .select('stock')
+                        .eq('id', item.item_id)
+                        .single();
+
+                    if (currentItem) {
+                        await supabase
+                            .from('items')
+                            .update({ stock: currentItem.stock - item.quantity })
+                            .eq('id', item.item_id);
+                    }
+                }
+            }
+
+            showToast('Quotation converted to invoice successfully!', 'success');
+            navigate('/invoices');
+        } catch (error) {
+            console.error('Error converting to invoice:', error);
+            showToast('Failed to convert to invoice', 'error');
+        }
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm('Are you sure you want to delete this quotation?')) return;
-
         try {
             // Delete quotation items first
             await supabase.from('quotation_items').delete().eq('quotation_id', id);
             // Delete quotation
-            await supabase.from('quotations').delete().eq('id', id);
+            const { error } = await supabase.from('quotations').delete().eq('id', id);
+
+            if (error) throw error;
+
+            showToast('Quotation deleted successfully', 'success');
             fetchQuotations();
         } catch (error) {
             console.error('Error deleting quotation:', error);
-            alert('Failed to delete quotation');
+            showToast('Failed to delete quotation', 'error');
         }
     };
 

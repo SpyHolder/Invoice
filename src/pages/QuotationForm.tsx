@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Plus, Trash2, ArrowLeft } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { supabase, Customer } from '../lib/supabase';
+import { supabase, Customer, Item } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 
 interface LineItem {
     id: string;
+    item_id: string;
     item_name: string;
     description: string;
     quantity: number;
@@ -19,9 +21,13 @@ interface LineItem {
 
 export const QuotationForm = () => {
     const { user } = useAuth();
+    const { id } = useParams();
     const navigate = useNavigate();
+    const { showToast } = useToast();
     const [customers, setCustomers] = useState<Customer[]>([]);
+    const [items, setItems] = useState<Item[]>([]);
     const [loading, setLoading] = useState(false);
+    const [isEditMode, setIsEditMode] = useState(false);
 
     const [formData, setFormData] = useState({
         customer_id: '',
@@ -36,6 +42,7 @@ export const QuotationForm = () => {
     const [lineItems, setLineItems] = useState<LineItem[]>([
         {
             id: '1',
+            item_id: '',
             item_name: '',
             description: '',
             quantity: 1,
@@ -48,11 +55,76 @@ export const QuotationForm = () => {
 
     useEffect(() => {
         fetchCustomers();
-    }, []);
+        fetchItems();
+        if (id) {
+            setIsEditMode(true);
+            loadQuotation(id);
+        }
+    }, [id]);
 
     const fetchCustomers = async () => {
         const { data } = await supabase.from('customers').select('*').order('name');
         if (data) setCustomers(data);
+    };
+
+    const fetchItems = async () => {
+        const { data } = await supabase.from('items').select('*').order('name');
+        if (data) setItems(data);
+    };
+
+    const loadQuotation = async (quotationId: string) => {
+        setLoading(true);
+        try {
+            // Load quotation header
+            const { data: quotation, error: quotationError } = await supabase
+                .from('quotations')
+                .select('*')
+                .eq('id', quotationId)
+                .single();
+
+            if (quotationError) throw quotationError;
+
+            if (quotation) {
+                setFormData({
+                    customer_id: quotation.customer_id,
+                    date: quotation.date,
+                    valid_until: quotation.valid_until,
+                    notes: quotation.notes || '',
+                    payment_terms: quotation.payment_terms || '',
+                    discount: quotation.discount,
+                    tax: quotation.tax,
+                });
+
+                // Load quotation items
+                const { data: quotationItems, error: itemsError } = await supabase
+                    .from('quotation_items')
+                    .select('*')
+                    .eq('quotation_id', quotationId);
+
+                if (itemsError) throw itemsError;
+
+                if (quotationItems && quotationItems.length > 0) {
+                    const loadedItems = quotationItems.map((item, index) => ({
+                        id: `loaded-${index}`,
+                        item_id: item.item_id || '',
+                        item_name: item.item_name,
+                        description: item.description || '',
+                        quantity: item.quantity,
+                        unit_price: item.unit_price,
+                        discount: item.discount,
+                        tax_rate: item.tax_rate,
+                        total: item.total,
+                    }));
+                    setLineItems(loadedItems);
+                }
+            }
+        } catch (error: any) {
+            console.error('Error loading quotation:', error);
+            showToast('Failed to load quotation', 'error');
+            navigate('/quotations');
+        } finally {
+            setLoading(false);
+        }
     };
 
     const addLineItem = () => {
@@ -60,6 +132,7 @@ export const QuotationForm = () => {
             ...lineItems,
             {
                 id: Date.now().toString(),
+                item_id: '',
                 item_name: '',
                 description: '',
                 quantity: 1,
@@ -82,6 +155,17 @@ export const QuotationForm = () => {
             lineItems.map((item) => {
                 if (item.id === id) {
                     const updated = { ...item, [field]: value };
+
+                    // If item_id changed, auto-fill name and price
+                    if (field === 'item_id' && value) {
+                        const selectedItem = items.find((i) => i.id === value);
+                        if (selectedItem) {
+                            updated.item_name = selectedItem.name;
+                            updated.description = selectedItem.description || '';
+                            updated.unit_price = selectedItem.price;
+                        }
+                    }
+
                     const subtotal = updated.quantity * updated.unit_price;
                     const discountAmount = subtotal * (updated.discount / 100);
                     const taxAmount = (subtotal - discountAmount) * (updated.tax_rate / 100);
@@ -94,9 +178,7 @@ export const QuotationForm = () => {
     };
 
     const calculateTotals = () => {
-        // Subtotal is now the sum of row totals (which already include row-level discounts + taxes)
         const subtotal = lineItems.reduce((sum, item) => sum + item.total, 0);
-        // Global discount and tax still apply on top
         const discountAmount = subtotal * (formData.discount / 100);
         const taxAmount = (subtotal - discountAmount) * (formData.tax / 100);
         const total = subtotal - discountAmount + taxAmount;
@@ -111,11 +193,11 @@ export const QuotationForm = () => {
         try {
             const totals = calculateTotals();
 
-            const { data: quotation, error: quotationError } = await supabase
-                .from('quotations')
-                .insert([
-                    {
-                        quotation_number: 'QT-' + Date.now(),
+            if (isEditMode && id) {
+                // Update existing quotation
+                const { error: quotationError } = await supabase
+                    .from('quotations')
+                    .update({
                         customer_id: formData.customer_id,
                         date: formData.date,
                         valid_until: formData.valid_until,
@@ -125,33 +207,79 @@ export const QuotationForm = () => {
                         total: totals.total,
                         notes: formData.notes,
                         payment_terms: formData.payment_terms,
-                        status: 'draft',
-                    },
-                ])
-                .select()
-                .single();
+                    })
+                    .eq('id', id);
 
-            if (quotationError) throw quotationError;
+                if (quotationError) throw quotationError;
 
-            const itemsToInsert = lineItems.map((item) => ({
-                quotation_id: quotation.id,
-                item_name: item.item_name,
-                description: item.description,
-                quantity: item.quantity,
-                unit_price: item.unit_price,
-                discount: item.discount,
-                tax_rate: item.tax_rate,
-                total: item.total,
-            }));
+                // Delete existing items
+                await supabase.from('quotation_items').delete().eq('quotation_id', id);
 
-            const { error: itemsError } = await supabase.from('quotation_items').insert(itemsToInsert);
+                // Insert updated items
+                const itemsToInsert = lineItems.map((item) => ({
+                    quotation_id: id,
+                    item_id: item.item_id,
+                    item_name: item.item_name,
+                    description: item.description,
+                    quantity: item.quantity,
+                    unit_price: item.unit_price,
+                    discount: item.discount,
+                    tax_rate: item.tax_rate,
+                    total: item.total,
+                }));
 
-            if (itemsError) throw itemsError;
+                const { error: itemsError } = await supabase.from('quotation_items').insert(itemsToInsert);
+
+                if (itemsError) throw itemsError;
+
+                showToast('Quotation updated successfully!', 'success');
+            } else {
+                // Create new quotation
+                const { data: quotation, error: quotationError } = await supabase
+                    .from('quotations')
+                    .insert([
+                        {
+                            quotation_number: 'QT-' + Date.now(),
+                            customer_id: formData.customer_id,
+                            date: formData.date,
+                            valid_until: formData.valid_until,
+                            subtotal: totals.subtotal,
+                            discount: formData.discount,
+                            tax: formData.tax,
+                            total: totals.total,
+                            notes: formData.notes,
+                            payment_terms: formData.payment_terms,
+                            status: 'draft',
+                        },
+                    ])
+                    .select()
+                    .single();
+
+                if (quotationError) throw quotationError;
+
+                const itemsToInsert = lineItems.map((item) => ({
+                    quotation_id: quotation.id,
+                    item_id: item.item_id,
+                    item_name: item.item_name,
+                    description: item.description,
+                    quantity: item.quantity,
+                    unit_price: item.unit_price,
+                    discount: item.discount,
+                    tax_rate: item.tax_rate,
+                    total: item.total,
+                }));
+
+                const { error: itemsError } = await supabase.from('quotation_items').insert(itemsToInsert);
+
+                if (itemsError) throw itemsError;
+
+                showToast('Quotation created successfully!', 'success');
+            }
 
             navigate('/quotations');
-        } catch (error) {
-            console.error('Error creating quotation:', error);
-            alert('Failed to create quotation');
+        } catch (error: any) {
+            console.error('Error saving quotation:', error);
+            showToast(error.message || 'Failed to save quotation', 'error');
         } finally {
             setLoading(false);
         }
@@ -168,8 +296,8 @@ export const QuotationForm = () => {
                         Back
                     </Button>
                     <div>
-                        <h1 className="text-3xl font-bold text-gray-900">Create Quotation</h1>
-                        <p className="text-gray-600 mt-1">Add quotation details and line items</p>
+                        <h1 className="text-3xl font-bold text-gray-900">{isEditMode ? 'Edit' : 'Create'} Quotation</h1>
+                        <p className="text-gray-600 mt-1">{isEditMode ? 'Update' : 'Add'} quotation details and line items</p>
                     </div>
                 </div>
             </div>
@@ -183,7 +311,7 @@ export const QuotationForm = () => {
                             <select
                                 value={formData.customer_id}
                                 onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
-                                className="input w-full"
+                                className="input w-full bg-white"
                                 required
                             >
                                 <option value="">Select Customer</option>
@@ -200,7 +328,7 @@ export const QuotationForm = () => {
                                 type="date"
                                 value={formData.date}
                                 onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                                className="input w-full"
+                                className="input w-full bg-white"
                                 required
                             />
                         </div>
@@ -210,7 +338,7 @@ export const QuotationForm = () => {
                                 type="date"
                                 value={formData.valid_until}
                                 onChange={(e) => setFormData({ ...formData, valid_until: e.target.value })}
-                                className="input w-full"
+                                className="input w-full bg-white"
                                 required
                             />
                         </div>
@@ -220,7 +348,7 @@ export const QuotationForm = () => {
                                 type="text"
                                 value={formData.payment_terms}
                                 onChange={(e) => setFormData({ ...formData, payment_terms: e.target.value })}
-                                className="input w-full"
+                                className="input w-full bg-white"
                                 placeholder="e.g., Net 30"
                             />
                         </div>
@@ -229,7 +357,7 @@ export const QuotationForm = () => {
                             <textarea
                                 value={formData.notes}
                                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                                className="input w-full"
+                                className="input w-full bg-white"
                                 rows={3}
                                 placeholder="Optional notes"
                             />
@@ -264,21 +392,26 @@ export const QuotationForm = () => {
                                 {lineItems.map((item) => (
                                     <tr key={item.id}>
                                         <td>
-                                            <input
-                                                type="text"
-                                                value={item.item_name}
-                                                onChange={(e) => updateLineItem(item.id, 'item_name', e.target.value)}
-                                                className="input w-full min-w-[150px]"
-                                                placeholder="Item name"
+                                            <select
+                                                value={item.item_id}
+                                                onChange={(e) => updateLineItem(item.id, 'item_id', e.target.value)}
+                                                className="input w-full min-w-[200px] bg-white"
                                                 required
-                                            />
+                                            >
+                                                <option value="">Select Item</option>
+                                                {items.map((i) => (
+                                                    <option key={i.id} value={i.id}>
+                                                        {i.name} - ${i.price}
+                                                    </option>
+                                                ))}
+                                            </select>
                                         </td>
                                         <td>
                                             <input
                                                 type="text"
                                                 value={item.description}
                                                 onChange={(e) => updateLineItem(item.id, 'description', e.target.value)}
-                                                className="input w-full min-w-[150px]"
+                                                className="input w-full min-w-[150px] bg-white"
                                                 placeholder="Description"
                                             />
                                         </td>
@@ -287,7 +420,7 @@ export const QuotationForm = () => {
                                                 type="number"
                                                 value={item.quantity}
                                                 onChange={(e) => updateLineItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                                                className="input w-20"
+                                                className="input w-20 bg-white"
                                                 min="1"
                                                 required
                                             />
@@ -297,7 +430,7 @@ export const QuotationForm = () => {
                                                 type="number"
                                                 value={item.unit_price}
                                                 onChange={(e) => updateLineItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                                                className="input w-28"
+                                                className="input w-28 bg-white"
                                                 step="0.01"
                                                 min="0"
                                                 required
@@ -308,7 +441,7 @@ export const QuotationForm = () => {
                                                 type="number"
                                                 value={item.discount}
                                                 onChange={(e) => updateLineItem(item.id, 'discount', parseFloat(e.target.value) || 0)}
-                                                className="input w-20"
+                                                className="input w-20 bg-white"
                                                 step="0.01"
                                                 min="0"
                                                 max="100"
@@ -319,7 +452,7 @@ export const QuotationForm = () => {
                                                 type="number"
                                                 value={item.tax_rate}
                                                 onChange={(e) => updateLineItem(item.id, 'tax_rate', parseFloat(e.target.value) || 0)}
-                                                className="input w-20"
+                                                className="input w-20 bg-white"
                                                 step="0.01"
                                                 min="0"
                                                 max="100"
@@ -356,7 +489,7 @@ export const QuotationForm = () => {
                                 type="number"
                                 value={formData.discount}
                                 onChange={(e) => setFormData({ ...formData, discount: parseFloat(e.target.value) || 0 })}
-                                className="input w-24"
+                                className="input w-24 bg-white"
                                 step="0.01"
                                 min="0"
                                 max="100"
@@ -369,7 +502,7 @@ export const QuotationForm = () => {
                                 type="number"
                                 value={formData.tax}
                                 onChange={(e) => setFormData({ ...formData, tax: parseFloat(e.target.value) || 0 })}
-                                className="input w-24"
+                                className="input w-24 bg-white"
                                 step="0.01"
                                 min="0"
                                 max="100"
@@ -388,7 +521,7 @@ export const QuotationForm = () => {
                         Cancel
                     </Button>
                     <Button type="submit" disabled={loading || !formData.customer_id}>
-                        {loading ? 'Creating...' : 'Create Quotation'}
+                        {loading ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Quotation' : 'Create Quotation')}
                     </Button>
                 </div>
             </form>
