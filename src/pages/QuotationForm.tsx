@@ -178,9 +178,7 @@ export const QuotationForm = () => {
     };
 
     const calculateTotals = () => {
-        // Subtotal is now the sum of row totals (which already include row-level discounts + taxes)
         const subtotal = lineItems.reduce((sum, item) => sum + item.total, 0);
-        // Global discount and tax still apply on top
         const discountAmount = subtotal * (formData.discount / 100);
         const taxAmount = (subtotal - discountAmount) * (formData.tax / 100);
         const total = subtotal - discountAmount + taxAmount;
@@ -313,7 +311,7 @@ export const QuotationForm = () => {
                             <select
                                 value={formData.customer_id}
                                 onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
-                                className="input w-full"
+                                className="input w-full bg-white"
                                 required
                             >
                                 <option value="">Select Customer</option>
@@ -330,7 +328,7 @@ export const QuotationForm = () => {
                                 type="date"
                                 value={formData.date}
                                 onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                                className="input w-full"
+                                className="input w-full bg-white"
                                 required
                             />
                         </div>
@@ -340,7 +338,7 @@ export const QuotationForm = () => {
                                 type="date"
                                 value={formData.valid_until}
                                 onChange={(e) => setFormData({ ...formData, valid_until: e.target.value })}
-                                className="input w-full"
+                                className="input w-full bg-white"
                                 required
                             />
                         </div>
@@ -350,7 +348,7 @@ export const QuotationForm = () => {
                                 type="text"
                                 value={formData.payment_terms}
                                 onChange={(e) => setFormData({ ...formData, payment_terms: e.target.value })}
-                                className="input w-full"
+                                className="input w-full bg-white"
                                 placeholder="e.g., Net 30"
                             />
                         </div>
@@ -359,7 +357,7 @@ export const QuotationForm = () => {
                             <textarea
                                 value={formData.notes}
                                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                                className="input w-full"
+                                className="input w-full bg-white"
                                 rows={3}
                                 placeholder="Optional notes"
                             />
@@ -397,7 +395,7 @@ export const QuotationForm = () => {
                                             <select
                                                 value={item.item_id}
                                                 onChange={(e) => updateLineItem(item.id, 'item_id', e.target.value)}
-                                                className="input w-full min-w-[200px]"
+                                                className="input w-full min-w-[200px] bg-white"
                                                 required
                                             >
                                                 <option value="">Select Item</option>
@@ -413,7 +411,7 @@ export const QuotationForm = () => {
                                                 type="text"
                                                 value={item.description}
                                                 onChange={(e) => updateLineItem(item.id, 'description', e.target.value)}
-                                                className="input w-full min-w-[150px]"
+                                                className="input w-full min-w-[150px] bg-white"
                                                 placeholder="Description"
                                             />
                                         </td>
@@ -422,7 +420,7 @@ export const QuotationForm = () => {
                                                 type="number"
                                                 value={item.quantity}
                                                 onChange={(e) => updateLineItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                                                className="input w-20"
+                                                className="input w-20 bg-white"
                                                 min="1"
                                                 required
                                             />
@@ -432,7 +430,7 @@ export const QuotationForm = () => {
                                                 type="number"
                                                 value={item.unit_price}
                                                 onChange={(e) => updateLineItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                                                className="input w-28"
+                                                className="input w-28 bg-white"
                                                 step="0.01"
                                                 min="0"
                                                 required
@@ -443,7 +441,7 @@ export const QuotationForm = () => {
                                                 type="number"
                                                 value={item.discount}
                                                 onChange={(e) => updateLineItem(item.id, 'discount', parseFloat(e.target.value) || 0)}
-                                                className="input w-20"
+                                                className="input w-20 bg-white"
                                                 step="0.01"
                                                 min="0"
                                                 max="100"
@@ -454,7 +452,7 @@ export const QuotationForm = () => {
                                                 type="number"
                                                 value={item.tax_rate}
                                                 onChange={(e) => updateLineItem(item.id, 'tax_rate', parseFloat(e.target.value) || 0)}
-                                                className="input w-20"
+                                                className="input w-20 bg-white"
                                                 step="0.01"
                                                 min="0"
                                                 max="100"
@@ -491,7 +489,7 @@ export const QuotationForm = () => {
                                 type="number"
                                 value={formData.discount}
                                 onChange={(e) => setFormData({ ...formData, discount: parseFloat(e.target.value) || 0 })}
-                                className="input w-24"
+                                className="input w-24 bg-white"
                                 step="0.01"
                                 min="0"
                                 max="100"
@@ -504,7 +502,7 @@ export const QuotationForm = () => {
                                 type="number"
                                 value={formData.tax}
                                 onChange={(e) => setFormData({ ...formData, tax: parseFloat(e.target.value) || 0 })}
-                                className="input w-24"
+                                className="input w-24 bg-white"
                                 step="0.01"
                                 min="0"
                                 max="100"

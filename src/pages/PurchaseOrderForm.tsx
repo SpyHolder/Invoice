@@ -260,7 +260,8 @@ export const PurchaseOrderForm = () => {
                                 type="text"
                                 value={formData.vendor_name}
                                 onChange={(e) => setFormData({ ...formData, vendor_name: e.target.value })}
-                                className="input w-full"
+                                // Ubah disini: ditambahkan bg-white
+                                className="input w-full bg-white"
                                 placeholder="Enter vendor name"
                                 required
                             />
@@ -271,7 +272,8 @@ export const PurchaseOrderForm = () => {
                                 type="date"
                                 value={formData.date}
                                 onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                                className="input w-full"
+                                // Ubah disini: ditambahkan bg-white
+                                className="input w-full bg-white"
                                 required
                             />
                         </div>
@@ -280,7 +282,8 @@ export const PurchaseOrderForm = () => {
                             <textarea
                                 value={formData.notes}
                                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                                className="input w-full"
+                                // Ubah disini: ditambahkan bg-white
+                                className="input w-full bg-white"
                                 rows={3}
                                 placeholder="Optional notes"
                             />
@@ -315,7 +318,8 @@ export const PurchaseOrderForm = () => {
                                             <select
                                                 value={item.item_id}
                                                 onChange={(e) => updateLineItem(item.id, 'item_id', e.target.value)}
-                                                className="input w-full min-w-[200px]"
+                                                // Ubah disini: ditambahkan bg-white
+                                                className="input w-full min-w-[200px] bg-white"
                                                 required
                                             >
                                                 <option value="">Select Item</option>
@@ -331,7 +335,8 @@ export const PurchaseOrderForm = () => {
                                                 type="number"
                                                 value={item.quantity}
                                                 onChange={(e) => updateLineItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                                                className="input w-24"
+                                                // Ubah disini: ditambahkan bg-white
+                                                className="input w-24 bg-white"
                                                 min="1"
                                                 required
                                             />
@@ -341,7 +346,8 @@ export const PurchaseOrderForm = () => {
                                                 type="number"
                                                 value={item.unit_price}
                                                 onChange={(e) => updateLineItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                                                className="input w-32"
+                                                // Ubah disini: ditambahkan bg-white
+                                                className="input w-32 bg-white"
                                                 step="0.01"
                                                 min="0"
                                                 required

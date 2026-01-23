@@ -328,7 +328,7 @@ export const InvoiceForm = () => {
                             <select
                                 value={formData.customer_id}
                                 onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
-                                className="input w-full"
+                                className="input w-full bg-white"
                                 required
                             >
                                 <option value="">Select Customer</option>
@@ -345,7 +345,7 @@ export const InvoiceForm = () => {
                                 type="date"
                                 value={formData.date}
                                 onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                                className="input w-full"
+                                className="input w-full bg-white"
                                 required
                             />
                         </div>
@@ -355,7 +355,7 @@ export const InvoiceForm = () => {
                                 type="date"
                                 value={formData.due_date}
                                 onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-                                className="input w-full"
+                                className="input w-full bg-white"
                                 required
                             />
                         </div>
@@ -365,7 +365,7 @@ export const InvoiceForm = () => {
                                 type="text"
                                 value={formData.notes}
                                 onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                                className="input w-full"
+                                className="input w-full bg-white"
                                 placeholder="Optional notes"
                             />
                         </div>
@@ -402,7 +402,7 @@ export const InvoiceForm = () => {
                                             <select
                                                 value={item.item_id}
                                                 onChange={(e) => updateLineItem(item.id, 'item_id', e.target.value)}
-                                                className="input w-full min-w-[180px]"
+                                                className="input w-full min-w-[180px] bg-white"
                                                 required
                                             >
                                                 <option value="">Select Item</option>
@@ -418,7 +418,7 @@ export const InvoiceForm = () => {
                                                 type="text"
                                                 value={item.description}
                                                 onChange={(e) => updateLineItem(item.id, 'description', e.target.value)}
-                                                className="input w-full min-w-[150px]"
+                                                className="input w-full min-w-[150px] bg-white"
                                                 placeholder="Description"
                                             />
                                         </td>
@@ -427,7 +427,7 @@ export const InvoiceForm = () => {
                                                 type="number"
                                                 value={item.quantity}
                                                 onChange={(e) => updateLineItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                                                className="input w-20"
+                                                className="input w-20 bg-white"
                                                 min="1"
                                                 required
                                             />
@@ -437,7 +437,7 @@ export const InvoiceForm = () => {
                                                 type="number"
                                                 value={item.unit_price}
                                                 onChange={(e) => updateLineItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                                                className="input w-28"
+                                                className="input w-28 bg-white"
                                                 step="0.01"
                                                 min="0"
                                                 required
@@ -448,7 +448,7 @@ export const InvoiceForm = () => {
                                                 type="number"
                                                 value={item.discount}
                                                 onChange={(e) => updateLineItem(item.id, 'discount', parseFloat(e.target.value) || 0)}
-                                                className="input w-20"
+                                                className="input w-20 bg-white"
                                                 step="0.01"
                                                 min="0"
                                                 max="100"
@@ -459,7 +459,7 @@ export const InvoiceForm = () => {
                                                 type="number"
                                                 value={item.tax_rate}
                                                 onChange={(e) => updateLineItem(item.id, 'tax_rate', parseFloat(e.target.value) || 0)}
-                                                className="input w-20"
+                                                className="input w-20 bg-white"
                                                 step="0.01"
                                                 min="0"
                                                 max="100"
@@ -496,7 +496,7 @@ export const InvoiceForm = () => {
                                 type="number"
                                 value={formData.discount}
                                 onChange={(e) => setFormData({ ...formData, discount: parseFloat(e.target.value) || 0 })}
-                                className="input w-24"
+                                className="input w-24 bg-white"
                                 step="0.01"
                                 min="0"
                                 max="100"
@@ -509,7 +509,7 @@ export const InvoiceForm = () => {
                                 type="number"
                                 value={formData.tax}
                                 onChange={(e) => setFormData({ ...formData, tax: parseFloat(e.target.value) || 0 })}
-                                className="input w-24"
+                                className="input w-24 bg-white"
                                 step="0.01"
                                 min="0"
                                 max="100"

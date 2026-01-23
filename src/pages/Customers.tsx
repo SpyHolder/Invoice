@@ -141,7 +141,7 @@ export const Customers = () => {
                         placeholder="Search customers by name, email, phone, or address..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="input pl-10"
+                        className="input bg-white pl-10"
                     />
                 </div>
             </Card>
