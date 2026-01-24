@@ -232,10 +232,9 @@ export const InvoiceForm = () => {
                 // Delete existing items
                 await supabase.from('invoice_items').delete().eq('invoice_id', id);
 
-                // Insert updated items
+                // Insert updated items (item_id is not stored in DB, only used for dropdown selection)
                 const itemsToInsert = lineItems.map((item) => ({
                     invoice_id: id,
-                    item_id: item.item_id,
                     item_name: item.item_name,
                     description: item.description,
                     quantity: item.quantity,
@@ -273,10 +272,9 @@ export const InvoiceForm = () => {
 
                 if (invoiceError) throw invoiceError;
 
-                // Create invoice items
+                // Create invoice items (item_id is not stored in DB, only used for dropdown selection)
                 const itemsToInsert = lineItems.map((item) => ({
                     invoice_id: invoice.id,
-                    item_id: item.item_id,
                     item_name: item.item_name,
                     description: item.description,
                     quantity: item.quantity,
