@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, FileText, FileCheck, ShoppingCart, Package, Users, Building2 } from 'lucide-react';
+import { LayoutDashboard, FileText, FileCheck, ShoppingCart, Package, Users, Building2, Truck } from 'lucide-react';
 
 export const Sidebar = () => {
     const navItems = [
         { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
         { to: '/invoices', icon: FileText, label: 'Invoices' },
         { to: '/quotations', icon: FileCheck, label: 'Quotations' },
+        { to: '/delivery-orders', icon: Truck, label: 'Delivery Orders' },
         { to: '/purchase-orders', icon: ShoppingCart, label: 'Purchase Orders' },
         { to: '/items', icon: Package, label: 'Items' },
         { to: '/customers', icon: Users, label: 'Customers' },

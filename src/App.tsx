@@ -18,6 +18,9 @@ import { ViewQuotation } from './pages/ViewQuotation';
 import { PurchaseOrders } from './pages/PurchaseOrders';
 import { PurchaseOrderForm } from './pages/PurchaseOrderForm';
 import { ViewPurchaseOrder } from './pages/ViewPurchaseOrder';
+import { DeliveryOrders } from './pages/DeliveryOrders';
+import { DeliveryOrderForm } from './pages/DeliveryOrderForm';
+import { ViewDeliveryOrder } from './pages/ViewDeliveryOrder';
 
 function App() {
     return (
@@ -177,6 +180,46 @@ function App() {
                                 <ProtectedRoute>
                                     <MainLayout>
                                         <ViewPurchaseOrder />
+                                    </MainLayout>
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/delivery-orders"
+                            element={
+                                <ProtectedRoute>
+                                    <MainLayout>
+                                        <DeliveryOrders />
+                                    </MainLayout>
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/delivery-orders/new"
+                            element={
+                                <ProtectedRoute>
+                                    <MainLayout>
+                                        <DeliveryOrderForm />
+                                    </MainLayout>
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/delivery-orders/edit/:id"
+                            element={
+                                <ProtectedRoute>
+                                    <MainLayout>
+                                        <DeliveryOrderForm />
+                                    </MainLayout>
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/delivery-orders/:id"
+                            element={
+                                <ProtectedRoute>
+                                    <MainLayout>
+                                        <ViewDeliveryOrder />
                                     </MainLayout>
                                 </ProtectedRoute>
                             }

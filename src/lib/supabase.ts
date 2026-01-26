@@ -36,6 +36,7 @@ export interface Customer {
     email: string | null;
     phone: string | null;
     address: string | null;
+    attn: string | null;
     created_at: string;
 }
 
@@ -53,6 +54,13 @@ export interface Invoice {
     status: string;
     created_at: string;
     customer?: Customer;
+    // New Fields
+    terms: string;
+    customer_po: string | null;
+    // New Fields for Project Based
+    sales_order_id?: string;
+    invoice_type?: 'ITEM' | 'PROGRESS';
+    po_group_id?: string;
 }
 
 export interface InvoiceItem {
@@ -66,6 +74,21 @@ export interface InvoiceItem {
     discount: number;
     tax_rate: number;
     total: number;
+    // New Fields
+    uom: string;
+    discount_percent: number;
+}
+
+export interface CompanySettings {
+    id: string;
+    name: string;
+    address_line1: string;
+    address_line2: string;
+    address_line3: string;
+    phone: string;
+    email: string;
+    logo_url: string;
+    gst_note: string;
 }
 
 export interface Quotation {
@@ -83,6 +106,13 @@ export interface Quotation {
     status: string;
     created_at: string;
     customer?: Customer;
+    // New fields
+    contact: string | null;
+    rfq_ref_no: string | null;
+    subject: string | null;
+    goodwill_discount: number;
+    currency: string;
+    linked_sales_order_id?: string;
 }
 
 export interface QuotationItem {
@@ -96,6 +126,11 @@ export interface QuotationItem {
     discount: number;
     tax_rate: number;
     total: number;
+    // New fields
+    uom: string;
+    bef_disc: number;
+    disc_percent: number;
+    disc_amt: number;
 }
 
 export interface PurchaseOrder {
@@ -105,6 +140,58 @@ export interface PurchaseOrder {
     status: 'pending' | 'received' | 'cancelled';
     total: number;
     notes: string | null;
+    created_at: string;
+    // New Fields
+    customer_id?: string;
+    total_project_value?: number;
+    customer?: { name: string };
+}
+
+export interface POGroup {
+    id: string;
+    purchase_order_id: string;
+    group_name: string;
+    description: string | null;
+    created_at: string;
+}
+
+export interface SalesOrder {
+    id: string;
+    quotation_id?: string;
+    purchase_order_id?: string;
+    customer_id?: string;
+    status: string;
+    total_amount: number;
+    notes: string | null;
+    created_at: string;
+    updated_at: string;
+    customer?: Customer;
+    quotation?: Quotation;
+    purchase_order?: PurchaseOrder;
+}
+
+export interface SalesOrderItem {
+    id: string;
+    sales_order_id: string;
+    item_name: string;
+    description: string | null;
+    quantity: number;
+    uom: string;
+    unit_price: number;
+    discount: number;
+    total: number;
+    po_group_id?: string;
+    item_id?: string;
+    created_at: string;
+    po_group?: POGroup;
+}
+
+export interface PaymentProgress {
+    id: string;
+    sales_order_id: string;
+    invoice_id?: string;
+    percentage: number;
+    amount: number;
     created_at: string;
 }
 
@@ -117,4 +204,42 @@ export interface PurchaseOrderItem {
     unit_price: number;
     total: number;
     item?: Item;
+}
+
+export interface DeliveryOrder {
+    id: string;
+    do_number: string;
+    customer_id: string;
+    quotation_id: string;
+    date: string;
+    delivery_date: string | null;
+    status: 'pending' | 'delivered' | 'cancelled';
+    notes: string | null;
+    delivery_address: string | null;
+    total: number;
+    created_at: string;
+    customer?: Customer;
+    quotation?: Quotation;
+    // New Fields
+    terms: string;
+    customer_po: string | null;
+    requestor: string | null;
+    billing_address: string | null;
+    sales_order_id?: string;
+    po_group_id?: string;
+}
+
+export interface DeliveryOrderItem {
+    id: string;
+    delivery_order_id: string;
+    quotation_item_id: string | null;
+    item_id: string | null;
+    item_name: string;
+    description: string | null;
+    quantity: number;
+    unit_price: number;
+    total: number;
+    // New Fields
+    group_name: string | null;
+    uom: string;
 }

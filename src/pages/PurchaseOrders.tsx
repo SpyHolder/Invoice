@@ -23,7 +23,7 @@ export const PurchaseOrders = () => {
 
         const { data, error } = await supabase
             .from('purchase_orders')
-            .select('*')
+            .select('*, customers:customer_id(name)')
             .order('created_at', { ascending: false });
 
         if (!error && data) {
@@ -82,6 +82,8 @@ export const PurchaseOrders = () => {
         try {
             // Delete PO items first
             await supabase.from('purchase_order_items').delete().eq('purchase_order_id', id);
+            // Delete PO groups
+            await supabase.from('po_groups').delete().eq('purchase_order_id', id);
             // Delete PO
             const { error } = await supabase.from('purchase_orders').delete().eq('id', id);
 
@@ -100,7 +102,7 @@ export const PurchaseOrders = () => {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Purchase Orders</h1>
-                    <p className="text-gray-600 mt-1">Manage your procurement</p>
+                    <p className="text-gray-600 mt-1">Manage Customer POs (Project) and Vendor POs</p>
                 </div>
                 <Button onClick={() => navigate('/purchase-orders/new')}>
                     <Plus className="w-4 h-4" />
@@ -121,9 +123,10 @@ export const PurchaseOrders = () => {
                         <table className="table">
                             <thead>
                                 <tr>
-                                    <th>Vendor</th>
+                                    <th>Customer/Vendor</th>
                                     <th>Date</th>
-                                    <th>Amount</th>
+                                    <th>Project Value</th>
+                                    <th>Total (Items)</th>
                                     <th>Status</th>
                                     <th>Actions</th>
                                 </tr>
@@ -131,8 +134,12 @@ export const PurchaseOrders = () => {
                             <tbody>
                                 {purchaseOrders.map((po) => (
                                     <tr key={po.id}>
-                                        <td className="font-medium">{po.vendor_name}</td>
+                                        <td className="font-medium">
+                                            {po.customer?.name || po.vendor_name || 'N/A'}
+                                            {po.customer?.name && <span className="text-xs text-gray-500 block">Customer PO</span>}
+                                        </td>
                                         <td>{new Date(po.date).toLocaleDateString()}</td>
+                                        <td>${(po.total_project_value || 0).toFixed(2)}</td>
                                         <td>${po.total.toFixed(2)}</td>
                                         <td>
                                             <span

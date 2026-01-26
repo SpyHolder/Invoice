@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileCheck } from 'lucide-react';
+import { ArrowLeft, Truck, Printer, Loader2, FileCheck } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { supabase, Quotation, QuotationItem, Customer } from '../lib/supabase';
+import { supabase, Quotation, QuotationItem, Customer, CompanySettings } from '../lib/supabase';
+import { useToast } from '../contexts/ToastContext';
 
 export const ViewQuotation = () => {
     const { id } = useParams();
     const navigate = useNavigate();
+    const { showToast } = useToast();
 
     const [quotation, setQuotation] = useState<Quotation | null>(null);
     const [customer, setCustomer] = useState<Customer | null>(null);
     const [items, setItems] = useState<QuotationItem[]>([]);
+    const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -22,6 +25,10 @@ export const ViewQuotation = () => {
 
         setLoading(true);
         try {
+            // Fetch company settings first (or default)
+            const { data: settings } = await supabase.from('company_settings').select('*').single();
+            setCompanySettings(settings);
+
             // Fetch quotation
             const { data: quotationData, error: quotationError } = await supabase
                 .from('quotations')
@@ -53,66 +60,28 @@ export const ViewQuotation = () => {
             setItems(itemsData || []);
         } catch (error) {
             console.error('Error fetching quotation:', error);
-            alert('Failed to load quotation');
+            showToast('Failed to load quotation', 'error');
         } finally {
             setLoading(false);
         }
     };
 
-    const convertToInvoice = async () => {
-        if (!quotation || !confirm('Convert this quotation to an invoice?')) return;
+    const handlePrint = () => {
+        window.print();
+    };
 
-        try {
-            // Create invoice
-            const { data: newInvoice, error } = await supabase
-                .from('invoices')
-                .insert([
-                    {
-                        invoice_number: 'INV-' + Date.now(),
-                        customer_id: quotation.customer_id,
-                        date: new Date().toISOString().split('T')[0],
-                        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                        status: 'unpaid',
-                        subtotal: quotation.subtotal,
-                        discount: quotation.discount,
-                        tax: quotation.tax,
-                        total: quotation.total,
-                        notes: quotation.notes,
-                    },
-                ])
-                .select()
-                .single();
-
-            if (error || !newInvoice) throw error;
-
-            // Create invoice items
-            const invoiceItems = items.map((item) => ({
-                invoice_id: newInvoice.id,
-                item_name: item.item_name,
-                description: item.description,
-                quantity: item.quantity,
-                unit_price: item.unit_price,
-                discount: item.discount,
-                tax_rate: item.tax_rate,
-                total: item.total,
-            }));
-
-            const { error: itemsError } = await supabase.from('invoice_items').insert(invoiceItems);
-
-            if (itemsError) throw itemsError;
-
-            alert('Quotation converted to invoice successfully!');
-            navigate('/invoices');
-        } catch (error) {
-            console.error('Error converting to invoice:', error);
-            alert('Failed to convert quotation');
-        }
+    const formatDate = (dateString: string) => {
+        return new Date(dateString).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+        });
     };
 
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
-                <div className="text-gray-500">Loading quotation...</div>
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
             </div>
         );
     }
@@ -126,17 +95,10 @@ export const ViewQuotation = () => {
         );
     }
 
-    const formatDate = (dateString: string) => {
-        return new Date(dateString).toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-        });
-    };
-
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            {/* Action Buttons - Hidden on print */}
+            <div className="flex items-center justify-between print:hidden">
                 <div className="flex items-center gap-4">
                     <Button variant="secondary" onClick={() => navigate('/quotations')}>
                         <ArrowLeft className="w-4 h-4" />
@@ -147,115 +109,219 @@ export const ViewQuotation = () => {
                         <p className="text-gray-600 mt-1">{quotation.quotation_number}</p>
                     </div>
                 </div>
-                <Button onClick={convertToInvoice}>
-                    <FileCheck className="w-4 h-4" />
-                    Convert to Invoice
-                </Button>
+                <div className="flex gap-2">
+                    <Button onClick={() => navigate('/delivery-orders/new')}>
+                        <Truck className="w-4 h-4" />
+                        Create Delivery Order
+                    </Button>
+                    <Button onClick={() => navigate(`/invoices/new?from_quotation=${id}`)}>
+                        <FileCheck className="w-4 h-4" />
+                        Create Invoice
+                    </Button>
+                    <Button variant="secondary" onClick={handlePrint}>
+                        <Printer className="w-4 h-4" />
+                        Print
+                    </Button>
+                </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow-lg p-8">
-                {/* Header */}
-                <div className="flex justify-between items-start mb-8">
-                    <div>
-                        <h2 className="text-2xl font-bold text-blue-600 mb-2">QUOTATION</h2>
-                        <p className="text-sm text-gray-600">Quotation Number:</p>
-                        <p className="text-lg font-semibold">{quotation.quotation_number}</p>
-                    </div>
-                    <div className="text-right">
-                        <p className="text-sm font-semibold text-gray-600">Status:</p>
-                        <span className="px-3 py-1 rounded-full text-sm font-semibold bg-blue-100 text-blue-800">
-                            {quotation.status}
-                        </span>
-                    </div>
-                </div>
+            {/* Printable Content - A4 Styles */}
+            <div className="bg-white rounded-lg shadow-lg p-8 print:shadow-none print:p-0 print:text-sm max-w-[210mm] mx-auto min-h-[297mm]">
 
-                {/* Customer & Dates */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-                    <div>
-                        <p className="text-sm font-semibold text-gray-600 mb-2">CUSTOMER:</p>
-                        <p className="text-lg font-semibold">{customer.name}</p>
-                        <p className="text-sm">{customer.phone}</p>
-                        <p className="text-sm">{customer.email}</p>
-                        {customer.address && <p className="text-sm">{customer.address}</p>}
-                    </div>
-                    <div className="text-right">
-                        <div className="mb-2">
-                            <span className="text-sm font-semibold text-gray-600">Date: </span>
-                            <span className="text-sm">{formatDate(quotation.date)}</span>
-                        </div>
-                        <div className="mb-2">
-                            <span className="text-sm font-semibold text-gray-600">Valid Until: </span>
-                            <span className="text-sm">{formatDate(quotation.valid_until)}</span>
-                        </div>
-                        {quotation.payment_terms && (
-                            <div>
-                                <span className="text-sm font-semibold text-gray-600">Payment Terms: </span>
-                                <span className="text-sm">{quotation.payment_terms}</span>
-                            </div>
+                {/* Header Section */}
+                <div className="flex gap-6 mb-8">
+                    {/* Logo Box */}
+                    <div className="w-32 h-32 border flex items-center justify-center">
+                        {companySettings?.logo_url ? (
+                            <img src={companySettings.logo_url} alt="Company Logo" className="max-w-full max-h-full" />
+                        ) : (
+                            <span className="text-gray-400">Logo</span>
                         )}
                     </div>
-                </div>
-
-                {/* Line Items */}
-                <table className="w-full mb-8">
-                    <thead>
-                        <tr className="border-b-2 border-gray-300">
-                            <th className="text-left py-3 text-sm font-semibold">ITEM</th>
-                            <th className="text-left py-3 text-sm font-semibold">DESCRIPTION</th>
-                            <th className="text-right py-3 text-sm font-semibold">QTY</th>
-                            <th className="text-right py-3 text-sm font-semibold">UNIT PRICE</th>
-                            <th className="text-right py-3 text-sm font-semibold">DISCOUNT %</th>
-                            <th className="text-right py-3 text-sm font-semibold">TAX %</th>
-                            <th className="text-right py-3 text-sm font-semibold">AMOUNT</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {items.map((item) => (
-                            <tr key={item.id} className="border-b border-gray-200">
-                                <td className="py-3">{item.item_name}</td>
-                                <td className="py-3 text-sm text-gray-600">{item.description}</td>
-                                <td className="py-3 text-right">{item.quantity}</td>
-                                <td className="py-3 text-right">${item.unit_price.toFixed(2)}</td>
-                                <td className="py-3 text-right">{item.discount}%</td>
-                                <td className="py-3 text-right">{item.tax_rate}%</td>
-                                <td className="py-3 text-right font-semibold">${item.total.toFixed(2)}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-
-                {/* Totals */}
-                <div className="flex justify-end mb-8">
-                    <div className="w-80">
-                        <div className="flex justify-between mb-2 text-sm">
-                            <span className="text-gray-600">Subtotal:</span>
-                            <span className="font-semibold">${quotation.subtotal.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between mb-2 text-sm">
-                            <span className="text-gray-600">Discount ({quotation.discount}%):</span>
-                            <span className="font-semibold">
-                                -${(quotation.subtotal * (quotation.discount / 100)).toFixed(2)}
-                            </span>
-                        </div>
-                        <div className="flex justify-between mb-3 text-sm">
-                            <span className="text-gray-600">Tax ({quotation.tax}%):</span>
-                            <span className="font-semibold">
-                                +$
-                                {((quotation.subtotal - quotation.subtotal * (quotation.discount / 100)) * (quotation.tax / 100)).toFixed(2)}
-                            </span>
-                        </div>
-                        <div className="flex justify-between pt-3 border-t-2 border-gray-300">
-                            <span className="text-xl font-bold">TOTAL:</span>
-                            <span className="text-xl font-bold text-blue-600">${quotation.total.toFixed(2)}</span>
+                    {/* Company Address */}
+                    <div className="flex-1">
+                        <h2 className="font-bold text-lg uppercase mb-1">{companySettings?.name || 'YOUR COMPANY NAME'}</h2>
+                        <div className="text-gray-700 space-y-0.5">
+                            <p>{companySettings?.address_line1}</p>
+                            <p>{companySettings?.address_line2}</p>
+                            <p>{companySettings?.address_line3}</p>
+                            <div className="flex gap-8 mt-2">
+                                {/* <p>Tel: {companySettings?.phone}</p> */}
+                                {/* <p>Fax: {companySettings?.fax}</p> */}
+                                {/* <p>Email: {companySettings?.email}</p> */}
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                {/* Notes */}
+                <hr className="border-t-2 border-gray-800 mb-6" />
+
+                {/* Info Grid */}
+                <div className="flex flex-wrap mb-6">
+                    {/* Left: Customer Info */}
+                    <div className="w-full md:w-3/5 pr-4 space-y-1">
+                        <div className="flex">
+                            <div className="w-24 font-bold">Customer</div>
+                            <div className="mx-2">:</div>
+                            <div className="flex-1 font-bold">{customer.name}</div>
+                        </div>
+                        <div className="flex">
+                            <div className="w-24"></div>
+                            <div className="mx-2"></div>
+                            <div className="flex-1 whitespace-pre-wrap">{customer.address}</div>
+                        </div>
+                        <div className="flex mt-2">
+                            <div className="w-24">Attn</div>
+                            <div className="mx-2">:</div>
+                            <div className="flex-1">{quotation.contact || customer.attn}</div>
+                        </div>
+                        <div className="flex">
+                            <div className="w-24">Tel</div>
+                            <div className="mx-2">:</div>
+                            <div className="flex-1">{customer.phone}</div>
+                        </div>
+                        <div className="flex">
+                            <div className="w-24">Email</div>
+                            <div className="mx-2">:</div>
+                            <div className="flex-1 underline text-blue-600">{customer.email}</div>
+                        </div>
+                    </div>
+
+                    {/* Right: Quote Info */}
+                    <div className="w-full md:w-2/5 pl-4 space-y-1">
+                        <div className="flex">
+                            <div className="w-32 font-bold">Contact</div>
+                            <div className="mx-2">:</div>
+                            <div className="flex-1">{companySettings?.phone || '085272124268'}</div>
+                        </div>
+                        <div className="flex">
+                            <div className="w-32 font-bold">RFQ Ref No</div>
+                            <div className="mx-2">:</div>
+                            <div className="flex-1">{quotation.rfq_ref_no || '-'}</div>
+                        </div>
+                        <div className="flex">
+                            <div className="w-32 font-bold">Quote No</div>
+                            <div className="mx-2">:</div>
+                            <div className="flex-1">{quotation.quotation_number}</div>
+                        </div>
+                        <div className="flex">
+                            <div className="w-32 font-bold">Quote Date</div>
+                            <div className="mx-2">:</div>
+                            <div className="flex-1">{formatDate(quotation.date)}</div>
+                        </div>
+                        <div className="flex">
+                            <div className="w-32 font-bold">Quote Validity</div>
+                            <div className="mx-2">:</div>
+                            <div className="flex-1">{formatDate(quotation.valid_until)}</div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Subject Line */}
+                <div className="flex mb-6 border-b border-gray-300 pb-2">
+                    <div className="w-24 font-bold">Subject</div>
+                    <div className="mx-2">:</div>
+                    <div className="flex-1 font-semibold underline decoration-solid">
+                        {quotation.subject || 'Supply Labor and Material'}
+                    </div>
+                </div>
+
+                {/* Items Table */}
+                <div className="mb-8">
+                    <table className="w-full border-collapse border border-black text-sm">
+                        <thead>
+                            <tr className="bg-gray-100 print:bg-transparent">
+                                <th className="border border-black px-1 py-1 text-center w-10">No</th>
+                                <th className="border border-black px-2 py-1 text-left">Description</th>
+                                <th className="border border-black px-1 py-1 text-center w-12">QTY</th>
+                                <th className="border border-black px-1 py-1 text-center w-12">UOM</th>
+                                <th className="border border-black px-1 py-1 text-right w-20">U/Price</th>
+                                <th className="border border-black px-1 py-1 text-right w-20">Bef Disc</th>
+                                <th className="border border-black px-1 py-1 text-center w-12">Disc %</th>
+                                <th className="border border-black px-1 py-1 text-right w-20">Disc Amt</th>
+                                <th className="border border-black px-1 py-1 text-right w-24">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {items.map((item, index) => (
+                                <tr key={item.id}>
+                                    <td className="border border-black px-1 py-1 text-center">{index + 1}</td>
+                                    <td className="border border-black px-2 py-1">
+                                        <div className="font-semibold">{item.item_name}</div>
+                                        {item.description && (
+                                            <div className="text-xs whitespace-pre-wrap">{item.description}</div>
+                                        )}
+                                    </td>
+                                    <td className="border border-black px-1 py-1 text-center">{item.quantity}</td>
+                                    <td className="border border-black px-1 py-1 text-center">{item.uom || 'EA'}</td>
+                                    <td className="border border-black px-1 py-1 text-right">{item.unit_price.toFixed(2)}</td>
+                                    <td className="border border-black px-1 py-1 text-right">
+                                        {(item.bef_disc || (item.quantity * item.unit_price)).toFixed(2)}
+                                    </td>
+                                    <td className="border border-black px-1 py-1 text-center">{item.disc_percent || 0}</td>
+                                    <td className="border border-black px-1 py-1 text-right">
+                                        {(item.disc_amt || 0).toFixed(2)}
+                                    </td>
+                                    <td className="border border-black px-1 py-1 text-right font-semibold">
+                                        {item.total.toFixed(2)}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* Summary Box */}
+                <div className="flex justify-end mb-8">
+                    <div className="w-[400px] border-2 border-black">
+                        <div className="border-b border-black text-center font-bold py-1 bg-gray-50 print:bg-transparent">
+                            Budget Summary
+                        </div>
+                        <div className="divide-y divide-black">
+                            {/* Subtotal / Scope for A */}
+                            <div className="flex justify-between px-2 py-1">
+                                <span className="text-right flex-1 pr-4">Subtotal</span>
+                                <span className="w-24 text-right font-medium">
+                                    {quotation.subtotal.toFixed(2)}
+                                </span>
+                            </div>
+
+                            {/* Goodwill Discount */}
+                            <div className="flex justify-between px-2 py-1">
+                                <span className="text-right flex-1 pr-4">Good Will Discount For</span>
+                                <span className="w-24 text-right font-medium">
+                                    {quotation.goodwill_discount > 0 ? `(${quotation.goodwill_discount.toFixed(2)})` : '0.00'}
+                                </span>
+                            </div>
+
+                            {/* Total Amount */}
+                            <div className="flex justify-between px-2 py-1 font-bold">
+                                <span className="text-right flex-1 pr-4">Total Amount</span>
+                                <span className="w-24 text-right">
+                                    {quotation.total.toFixed(2)}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Grand Total Words */}
+                <div className="text-right mb-12">
+                    <div className="text-xl font-bold">
+                        Total in ({quotation.currency || 'SGD'}) $ {quotation.total.toFixed(2)}
+                    </div>
+                </div>
+
+                {/* Footer Notes */}
+                <div className="font-bold text-sm">
+                    {companySettings?.gst_note || '* NO GST as Company is NOT a GST Registered Company Yet'}
+                </div>
+
+                {/* Terms & Conditions (if any) */}
                 {quotation.notes && (
-                    <div>
-                        <p className="text-sm font-semibold text-gray-600 mb-2">NOTES:</p>
-                        <p className="text-sm text-gray-700">{quotation.notes}</p>
+                    <div className="mt-8 text-sm text-gray-600 border-t pt-4">
+                        <p className="font-bold mb-1">Terms & Conditions:</p>
+                        <p className="whitespace-pre-wrap">{quotation.notes}</p>
                     </div>
                 )}
             </div>

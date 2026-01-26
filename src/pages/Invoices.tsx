@@ -87,6 +87,7 @@ export const Invoices = () => {
                         <table className="table">
                             <thead>
                                 <tr>
+                                    <th>Invoice No</th>
                                     <th>Customer</th>
                                     <th>Date</th>
                                     <th>Due Date</th>
@@ -97,6 +98,7 @@ export const Invoices = () => {
                             <tbody>
                                 {invoices.map((invoice) => (
                                     <tr key={invoice.id}>
+                                        <td className="font-medium">{invoice.invoice_number}</td>
                                         <td className="font-medium">{invoice.customer?.name}</td>
                                         <td>{new Date(invoice.date).toLocaleDateString()}</td>
                                         <td>{new Date(invoice.due_date).toLocaleDateString()}</td>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, FileCheck, Eye, ArrowRight, Edit2, Trash2 } from 'lucide-react';
+import { Plus, FileCheck, Eye, Edit2, Trash2 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { supabase, Quotation } from '../lib/supabase';
@@ -35,80 +35,6 @@ export const Quotations = () => {
         setLoading(false);
     };
 
-    const convertToInvoice = async (quotation: Quotation) => {
-        try {
-            // Fetch quotation items
-            const { data: quotationItems } = await supabase
-                .from('quotation_items')
-                .select('*')
-                .eq('quotation_id', quotation.id);
-
-            if (!quotationItems) {
-                showToast('No items found in quotation', 'error');
-                return;
-            }
-
-            // Create invoice
-            const { data: newInvoice, error } = await supabase
-                .from('invoices')
-                .insert([
-                    {
-                        invoice_number: 'INV-' + Date.now(),
-                        customer_id: quotation.customer_id,
-                        date: new Date().toISOString().split('T')[0],
-                        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                        status: 'unpaid',
-                        subtotal: quotation.subtotal,
-                        discount: quotation.discount,
-                        tax: quotation.tax,
-                        total: quotation.total,
-                        notes: quotation.notes,
-                    },
-                ])
-                .select()
-                .single();
-
-            if (error || !newInvoice) {
-                showToast('Failed to create invoice', 'error');
-                return;
-            }
-
-            // Create invoice items and deduct stock
-            for (const item of quotationItems) {
-                await supabase.from('invoice_items').insert([
-                    {
-                        invoice_id: newInvoice.id,
-                        item_id: item.item_id,
-                        quantity: item.quantity,
-                        unit_price: item.unit_price,
-                        amount: item.amount,
-                    },
-                ]);
-
-                // Deduct stock
-                if (item.item_id) {
-                    const { data: currentItem } = await supabase
-                        .from('items')
-                        .select('stock')
-                        .eq('id', item.item_id)
-                        .single();
-
-                    if (currentItem) {
-                        await supabase
-                            .from('items')
-                            .update({ stock: currentItem.stock - item.quantity })
-                            .eq('id', item.item_id);
-                    }
-                }
-            }
-
-            showToast('Quotation converted to invoice successfully!', 'success');
-            navigate('/invoices');
-        } catch (error) {
-            console.error('Error converting to invoice:', error);
-            showToast('Failed to convert to invoice', 'error');
-        }
-    };
 
     const handleDelete = async (id: string) => {
         try {
@@ -153,6 +79,7 @@ export const Quotations = () => {
                         <table className="table">
                             <thead>
                                 <tr>
+                                    <th>Quotation No</th>
                                     <th>Customer</th>
                                     <th>Date</th>
                                     <th>Valid Until</th>
@@ -164,7 +91,8 @@ export const Quotations = () => {
                             <tbody>
                                 {quotations.map((quotation) => (
                                     <tr key={quotation.id}>
-                                        <td className="font-medium">{quotation.customer?.name}</td>
+                                        <td className="font-medium">{quotation.quotation_number}</td>
+                                        <td>{quotation.customer?.name}</td>
                                         <td>{new Date(quotation.date).toLocaleDateString()}</td>
                                         <td>{new Date(quotation.valid_until).toLocaleDateString()}</td>
                                         <td>${quotation.total.toFixed(2)}</td>
@@ -189,13 +117,7 @@ export const Quotations = () => {
                                                 >
                                                     <Edit2 className="w-4 h-4" />
                                                 </button>
-                                                <button
-                                                    onClick={() => convertToInvoice(quotation)}
-                                                    className="text-purple-600 hover:text-purple-800"
-                                                    title="Convert to Invoice"
-                                                >
-                                                    <ArrowRight className="w-4 h-4" />
-                                                </button>
+
                                                 <button
                                                     onClick={() => handleDelete(quotation.id)}
                                                     className="text-red-600 hover:text-red-800"

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, ArrowLeft } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -13,57 +13,59 @@ interface LineItem {
     item_name: string;
     description: string;
     quantity: number;
+    uom: string;
     unit_price: number;
-    discount: number;
+    discount: number; // Amount
+    discount_percent: number; // Percent
     tax_rate: number;
     total: number;
 }
 
 export const InvoiceForm = () => {
-    const { user } = useAuth();
     const { id } = useParams();
     const navigate = useNavigate();
+    const { user } = useAuth();
     const { showToast } = useToast();
+    const [searchParams] = useSearchParams();
+    const isEditMode = Boolean(id);
+    const fromQuotationId = searchParams.get('from_quotation');
+    const fromDoId = searchParams.get('from_do');
+
+    const [loading, setLoading] = useState(false);
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [items, setItems] = useState<Item[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [isEditMode, setIsEditMode] = useState(false);
 
-    const [formData, setFormData] = useState({
-        customer_id: '',
-        date: new Date().toISOString().split('T')[0],
-        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        notes: '',
-        discount: 0,
-        tax: 0,
-    });
+    const [invoiceNumber, setInvoiceNumber] = useState('');
+    const [customerId, setCustomerId] = useState('');
+    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+    const [dueDate, setDueDate] = useState(
+        new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    );
+    const [status, setStatus] = useState('unpaid');
+    const [notes, setNotes] = useState('');
 
-    const [lineItems, setLineItems] = useState<LineItem[]>([
-        {
-            id: '1',
-            item_id: '',
-            item_name: '',
-            description: '',
-            quantity: 1,
-            unit_price: 0,
-            discount: 0,
-            tax_rate: 0,
-            total: 0,
-        },
-    ]);
+    // New Fields
+    const [terms, setTerms] = useState('30 Days');
+    const [customerPO, setCustomerPO] = useState('');
+
+    const [lineItems, setLineItems] = useState<LineItem[]>([]);
 
     useEffect(() => {
         fetchCustomers();
         fetchItems();
-    }, []);
-
-    useEffect(() => {
-        // Only load invoice after items are fetched and we have an ID
-        if (id && items.length > 0) {
-            setIsEditMode(true);
-            loadInvoice(id);
+        if (isEditMode) {
+            loadInvoice(id!);
+        } else if (fromQuotationId) {
+            setInvoiceNumber('INV-' + Date.now());
+            loadFromQuotation(fromQuotationId);
+        } else if (fromDoId) {
+            setInvoiceNumber('INV-' + Date.now());
+            loadFromDeliveryOrder(fromDoId);
+        } else {
+            setInvoiceNumber('INV-' + Date.now());
+            addLineItem();
         }
-    }, [id, items.length]);
+    }, [user, id]);
 
     const fetchCustomers = async () => {
         const { data } = await supabase.from('customers').select('*').order('name');
@@ -78,65 +80,51 @@ export const InvoiceForm = () => {
     const loadInvoice = async (invoiceId: string) => {
         setLoading(true);
         try {
-            // Load invoice header
-            const { data: invoice, error: invoiceError } = await supabase
+            const { data: invoice, error } = await supabase
                 .from('invoices')
                 .select('*')
                 .eq('id', invoiceId)
                 .single();
 
-            if (invoiceError) throw invoiceError;
+            if (error) throw error;
 
-            if (invoice) {
-                setFormData({
-                    customer_id: invoice.customer_id,
-                    date: invoice.date,
-                    due_date: invoice.due_date,
-                    notes: invoice.notes || '',
-                    discount: invoice.discount,
-                    tax: invoice.tax,
-                });
+            setInvoiceNumber(invoice.invoice_number);
+            setCustomerId(invoice.customer_id);
+            setDate(invoice.date);
+            setDueDate(invoice.due_date);
+            setNotes(invoice.notes || '');
+            setStatus(invoice.status);
 
-                // Load invoice items
-                const { data: invoiceItems, error: itemsError } = await supabase
-                    .from('invoice_items')
-                    .select('*')
-                    .eq('invoice_id', invoiceId);
+            // Load New Fields
+            setTerms(invoice.terms || '30 Days');
+            setCustomerPO(invoice.customer_po || '');
 
-                if (itemsError) throw itemsError;
+            const { data: items } = await supabase
+                .from('invoice_items')
+                .select('*')
+                .eq('invoice_id', invoiceId)
+                .order('id');
 
-                if (invoiceItems && invoiceItems.length > 0) {
-                    const loadedItems = invoiceItems.map((item, index) => {
-                        // Try to find matching item by name to populate item_id
-                        const matchingItem = items.find(i => i.name === item.item_name);
-
-                        console.log('Loading invoice item:', {
-                            item_name: item.item_name,
-                            matchingItem: matchingItem,
-                            item_id_from_db: item.item_id,
-                            final_item_id: matchingItem?.id || item.item_id || ''
-                        });
-
-                        return {
-                            id: `loaded-${index}`,
-                            item_id: matchingItem?.id || item.item_id || '', // Prioritize matched item
-                            item_name: item.item_name,
-                            description: item.description || '',
-                            quantity: item.quantity,
-                            unit_price: item.unit_price,
-                            discount: item.discount,
-                            tax_rate: item.tax_rate,
-                            total: item.total,
-                        };
-                    });
-                    console.log('Setting line items:', loadedItems);
-                    setLineItems(loadedItems);
-                }
+            if (items) {
+                setLineItems(
+                    items.map((item) => ({
+                        id: item.id,
+                        item_id: item.item_id || '',
+                        item_name: item.item_name,
+                        description: item.description || '',
+                        quantity: item.quantity,
+                        uom: item.uom || 'EA',
+                        unit_price: item.unit_price,
+                        discount: item.discount, // This is amount in DB
+                        discount_percent: item.discount_percent || 0,
+                        tax_rate: item.tax_rate,
+                        total: item.total,
+                    }))
+                );
             }
-        } catch (error: any) {
+        } catch (error) {
             console.error('Error loading invoice:', error);
             showToast('Failed to load invoice', 'error');
-            navigate('/invoices');
         } finally {
             setLoading(false);
         }
@@ -146,47 +134,142 @@ export const InvoiceForm = () => {
         setLineItems([
             ...lineItems,
             {
-                id: Date.now().toString(),
+                id: Math.random().toString(),
                 item_id: '',
                 item_name: '',
                 description: '',
                 quantity: 1,
+                uom: 'EA',
                 unit_price: 0,
                 discount: 0,
+                discount_percent: 0,
                 tax_rate: 0,
                 total: 0,
             },
         ]);
     };
 
-    const removeLineItem = (id: string) => {
-        if (lineItems.length > 1) {
-            setLineItems(lineItems.filter((item) => item.id !== id));
+    const loadFromQuotation = async (qId: string) => {
+        setLoading(true);
+        try {
+            const { data: qData, error: qError } = await supabase
+                .from('quotations')
+                .select('*')
+                .eq('id', qId)
+                .single();
+            if (qError) throw qError;
+
+            setCustomerId(qData.customer_id);
+            // setNotes(qData.notes || ''); // Optional: carry over notes?
+            setCustomerPO(qData.rfq_ref_no || ''); // Map RFQ to PO? Or just leave empty. Maybe better mapping exists.
+
+            const { data: qItems, error: itemsError } = await supabase
+                .from('quotation_items')
+                .select('*')
+                .eq('quotation_id', qId);
+
+            if (itemsError) throw itemsError;
+
+            if (qItems) {
+                setLineItems(qItems.map(item => ({
+                    id: Math.random().toString(), // New IDs
+                    item_id: item.item_id || '',
+                    item_name: item.item_name,
+                    description: item.description || '',
+                    quantity: item.quantity,
+                    uom: item.uom || 'EA',
+                    unit_price: item.unit_price,
+                    discount: item.disc_amt || 0,
+                    discount_percent: item.disc_percent || 0,
+                    tax_rate: item.tax_rate || 0,
+                    total: item.total
+                })));
+            }
+
+        } catch (error) {
+            console.error(error);
+            showToast('Failed to load quotation details', 'error');
+        } finally {
+            setLoading(false);
         }
+    };
+
+    const loadFromDeliveryOrder = async (doId: string) => {
+        setLoading(true);
+        try {
+            const { data: doData, error: doError } = await supabase
+                .from('delivery_orders')
+                .select('*')
+                .eq('id', doId)
+                .single();
+            if (doError) throw doError;
+
+            setCustomerId(doData.customer_id);
+            setCustomerPO(doData.customer_po || '');
+            setTerms(doData.terms || '30 Days');
+
+            const { data: doItems, error: itemsError } = await supabase
+                .from('delivery_order_items')
+                .select('*')
+                .eq('delivery_order_id', doId);
+
+            if (itemsError) throw itemsError;
+
+            if (doItems) {
+                setLineItems(doItems.map(item => ({
+                    id: Math.random().toString(),
+                    item_id: item.item_id || '',
+                    item_name: item.item_name,
+                    description: item.description || '',
+                    quantity: item.quantity,
+                    uom: item.uom || 'EA',
+                    unit_price: item.unit_price,
+                    discount: 0,
+                    discount_percent: 0,
+                    tax_rate: 0, // DO items usually don't have tax info stored explicitly, defaulting to 0
+                    total: item.total
+                })));
+            }
+        } catch (error) {
+            console.error(error);
+            showToast('Failed to load delivery order details', 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const removeLineItem = (id: string) => {
+        setLineItems(lineItems.filter((item) => item.id !== id));
     };
 
     const updateLineItem = (id: string, field: keyof LineItem, value: any) => {
         setLineItems(
             lineItems.map((item) => {
                 if (item.id === id) {
-                    const updated = { ...item, [field]: value };
+                    const updatedItem = { ...item, [field]: value };
 
-                    // If item_id changed, auto-fill name and price
-                    if (field === 'item_id' && value) {
+                    if (field === 'item_id') {
                         const selectedItem = items.find((i) => i.id === value);
                         if (selectedItem) {
-                            updated.item_name = selectedItem.name;
-                            updated.description = selectedItem.description || '';
-                            updated.unit_price = selectedItem.price;
+                            updatedItem.item_name = selectedItem.name;
+                            updatedItem.description = selectedItem.description;
+                            updatedItem.unit_price = selectedItem.price;
                         }
                     }
 
-                    // Calculate line total
-                    const subtotal = updated.quantity * updated.unit_price;
-                    const discountAmount = subtotal * (updated.discount / 100);
-                    const taxAmount = (subtotal - discountAmount) * (updated.tax_rate / 100);
-                    updated.total = subtotal - discountAmount + taxAmount;
-                    return updated;
+                    // Recalculate
+                    const qty = field === 'quantity' ? Number(value) : updatedItem.quantity;
+                    const price = field === 'unit_price' ? Number(value) : updatedItem.unit_price;
+                    const discPct = field === 'discount_percent' ? Number(value) : updatedItem.discount_percent;
+
+                    const subtotal = qty * price;
+                    const discAmount = subtotal * (discPct / 100);
+
+                    updatedItem.discount_percent = discPct;
+                    updatedItem.discount = discAmount;
+                    updatedItem.total = subtotal - discAmount;
+
+                    return updatedItem;
                 }
                 return item;
             })
@@ -194,87 +277,64 @@ export const InvoiceForm = () => {
     };
 
     const calculateTotals = () => {
-        // Subtotal is now the sum of row totals (which already include row-level discounts + taxes)
         const subtotal = lineItems.reduce((sum, item) => sum + item.total, 0);
-        // Global discount and tax still apply on top
-        const discountAmount = subtotal * (formData.discount / 100);
-        const taxAmount = (subtotal - discountAmount) * (formData.tax / 100);
-        const total = subtotal - discountAmount + taxAmount;
-        return { subtotal, discountAmount, taxAmount, total };
+        const tax = lineItems.reduce((sum, item) => sum + (item.total * item.tax_rate) / 100, 0);
+        const total = subtotal + tax;
+
+        return { subtotal, tax, total };
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!user || !formData.customer_id) return;
-
         setLoading(true);
+
+        const { subtotal, tax, total } = calculateTotals();
+
         try {
-            const totals = calculateTotals();
+            const invoiceData = {
+                invoice_number: invoiceNumber,
+                customer_id: customerId,
+                date,
+                due_date: dueDate,
+                subtotal,
+                discount: lineItems.reduce((sum, item) => sum + item.discount, 0),
+                tax,
+                total,
+                notes,
+                status,
+                // New Fields
+                terms,
+                customer_po: customerPO,
+            };
 
-            if (isEditMode && id) {
-                // Update existing invoice
-                const { error: invoiceError } = await supabase
+            let invoiceId = id;
+
+            if (isEditMode) {
+                const { error } = await supabase
                     .from('invoices')
-                    .update({
-                        customer_id: formData.customer_id,
-                        date: formData.date,
-                        due_date: formData.due_date,
-                        subtotal: totals.subtotal,
-                        discount: formData.discount,
-                        tax: formData.tax,
-                        total: totals.total,
-                        notes: formData.notes,
-                    })
+                    .update(invoiceData)
                     .eq('id', id);
-
-                if (invoiceError) throw invoiceError;
-
-                // Delete existing items
-                await supabase.from('invoice_items').delete().eq('invoice_id', id);
-
-                // Insert updated items (item_id is not stored in DB, only used for dropdown selection)
-                const itemsToInsert = lineItems.map((item) => ({
-                    invoice_id: id,
-                    item_name: item.item_name,
-                    description: item.description,
-                    quantity: item.quantity,
-                    unit_price: item.unit_price,
-                    discount: item.discount,
-                    tax_rate: item.tax_rate,
-                    total: item.total,
-                }));
-
-                const { error: itemsError } = await supabase.from('invoice_items').insert(itemsToInsert);
-
-                if (itemsError) throw itemsError;
-
-                showToast('Invoice updated successfully!', 'success');
+                if (error) throw error;
             } else {
-                // Create invoice
-                const { data: invoice, error: invoiceError } = await supabase
+                const { data, error } = await supabase
                     .from('invoices')
-                    .insert([
-                        {
-                            invoice_number: 'INV-' + Date.now(),
-                            customer_id: formData.customer_id,
-                            date: formData.date,
-                            due_date: formData.due_date,
-                            subtotal: totals.subtotal,
-                            discount: formData.discount,
-                            tax: formData.tax,
-                            total: totals.total,
-                            notes: formData.notes,
-                            status: 'unpaid',
-                        },
-                    ])
+                    .insert([invoiceData])
                     .select()
                     .single();
+                if (error) throw error;
+                invoiceId = data.id;
+            }
 
-                if (invoiceError) throw invoiceError;
+            // Delete old items
+            if (isEditMode) {
+                await supabase.from('invoice_items').delete().eq('invoice_id', id);
+            }
 
-                // Create invoice items (item_id is not stored in DB, only used for dropdown selection)
-                const itemsToInsert = lineItems.map((item) => ({
-                    invoice_id: invoice.id,
+            // Insert items
+            const { error: itemsError } = await supabase.from('invoice_items').insert(
+                lineItems.map((item) => ({
+                    invoice_id: invoiceId,
+                    item_id: item.item_id || null,
                     item_name: item.item_name,
                     description: item.description,
                     quantity: item.quantity,
@@ -282,19 +342,19 @@ export const InvoiceForm = () => {
                     discount: item.discount,
                     tax_rate: item.tax_rate,
                     total: item.total,
-                }));
+                    // New Fields
+                    uom: item.uom,
+                    discount_percent: item.discount_percent,
+                }))
+            );
 
-                const { error: itemsError } = await supabase.from('invoice_items').insert(itemsToInsert);
+            if (itemsError) throw itemsError;
 
-                if (itemsError) throw itemsError;
-
-                showToast('Invoice created successfully!', 'success');
-            }
-
+            showToast('Invoice saved successfully', 'success');
             navigate('/invoices');
-        } catch (error: any) {
+        } catch (error) {
             console.error('Error saving invoice:', error);
-            showToast(error.message || 'Failed to save invoice', 'error');
+            showToast('Failed to save invoice', 'error');
         } finally {
             setLoading(false);
         }
@@ -304,230 +364,221 @@ export const InvoiceForm = () => {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                    <Button variant="secondary" onClick={() => navigate('/invoices')}>
-                        <ArrowLeft className="w-4 h-4" />
-                        Back
-                    </Button>
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-900">{isEditMode ? 'Edit' : 'Create'} Invoice</h1>
-                        <p className="text-gray-600 mt-1">{isEditMode ? 'Update' : 'Add'} invoice details and line items</p>
-                    </div>
-                </div>
+            <div className="flex items-center gap-4">
+                <Button variant="secondary" onClick={() => navigate('/invoices')}>
+                    <ArrowLeft className="w-4 h-4" />
+                    Back
+                </Button>
+                <h1 className="text-3xl font-bold text-gray-900">
+                    {isEditMode ? 'Edit Invoice' : 'Create Invoice'}
+                </h1>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
                 <Card>
-                    <h2 className="text-xl font-semibold mb-4">Invoice Information</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Customer *</label>
                             <select
-                                value={formData.customer_id}
-                                onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
-                                className="input w-full bg-white"
+                                value={customerId}
+                                onChange={(e) => setCustomerId(e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
                                 required
                             >
                                 <option value="">Select Customer</option>
-                                {customers.map((customer) => (
-                                    <option key={customer.id} value={customer.id}>
-                                        {customer.name}
-                                    </option>
-                                ))}
+                                {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                             </select>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Date *</label>
-                            <input
-                                type="date"
-                                value={formData.date}
-                                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                                className="input w-full bg-white"
-                                required
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Due Date *</label>
-                            <input
-                                type="date"
-                                value={formData.due_date}
-                                onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-                                className="input w-full bg-white"
-                                required
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Number *</label>
                             <input
                                 type="text"
-                                value={formData.notes}
-                                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                                className="input w-full bg-white"
-                                placeholder="Optional notes"
+                                value={invoiceNumber}
+                                onChange={(e) => setInvoiceNumber(e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                                required
                             />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                            <input
+                                type="date"
+                                value={date}
+                                onChange={(e) => setDate(e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
+                            <input
+                                type="date"
+                                value={dueDate}
+                                onChange={(e) => setDueDate(e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Terms</label>
+                            <input
+                                type="text"
+                                value={terms}
+                                onChange={(e) => setTerms(e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Customer PO</label>
+                            <input
+                                type="text"
+                                value={customerPO}
+                                onChange={(e) => setCustomerPO(e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                            <select
+                                value={status}
+                                onChange={(e) => setStatus(e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+                            >
+                                <option value="unpaid">Unpaid</option>
+                                <option value="paid">Paid</option>
+                                <option value="overdue">Overdue</option>
+                            </select>
                         </div>
                     </div>
                 </Card>
 
                 <Card>
-                    <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-xl font-semibold">Line Items</h2>
-                        <Button type="button" onClick={addLineItem} variant="secondary">
-                            <Plus className="w-4 h-4" />
-                            Add Item
+                    <div className="p-6">
+                        <h2 className="text-lg font-semibold text-gray-900 mb-4">Line Items</h2>
+                        <div className="overflow-x-auto">
+                            <table className="w-full">
+                                <thead>
+                                    <tr className="border-b-2 border-gray-200">
+                                        <th className="text-left py-2 px-2 w-64">Item</th>
+                                        <th className="text-left py-2 px-2">Description</th>
+                                        <th className="text-right py-2 px-2 w-20">Qty</th>
+                                        <th className="text-center py-2 px-2 w-20">UOM</th>
+                                        <th className="text-right py-2 px-2 w-32">Price</th>
+                                        <th className="text-right py-2 px-2 w-20">Disc %</th>
+                                        <th className="text-right py-2 px-2 w-32">Total</th>
+                                        <th className="w-10"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {lineItems.map((item) => (
+                                        <tr key={item.id} className="border-b border-gray-100">
+                                            <td className="p-2 align-top">
+                                                <select
+                                                    value={item.item_id}
+                                                    onChange={(e) => updateLineItem(item.id, 'item_id', e.target.value)}
+                                                    className="w-full px-2 py-1 border rounded mb-2"
+                                                >
+                                                    <option value="">Select Item</option>
+                                                    {items.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+                                                </select>
+                                                <input
+                                                    type="text"
+                                                    value={item.item_name}
+                                                    onChange={(e) => updateLineItem(item.id, 'item_name', e.target.value)}
+                                                    className="w-full px-2 py-1 border rounded"
+                                                    placeholder="Item Name"
+                                                />
+                                            </td>
+                                            <td className="p-2 align-top">
+                                                <textarea
+                                                    value={item.description}
+                                                    onChange={(e) => updateLineItem(item.id, 'description', e.target.value)}
+                                                    rows={2}
+                                                    className="w-full px-2 py-1 border rounded"
+                                                />
+                                            </td>
+                                            <td className="p-2 align-top">
+                                                <input
+                                                    type="number"
+                                                    value={item.quantity}
+                                                    onChange={(e) => updateLineItem(item.id, 'quantity', e.target.value)}
+                                                    className="w-full px-2 py-1 border rounded text-right"
+                                                />
+                                            </td>
+                                            <td className="p-2 align-top">
+                                                <select
+                                                    value={item.uom}
+                                                    onChange={(e) => updateLineItem(item.id, 'uom', e.target.value)}
+                                                    className="w-full px-2 py-1 border rounded text-center"
+                                                >
+                                                    <option value="EA">EA</option>
+                                                    <option value="Nos">Nos</option>
+                                                    <option value="Lot">Lot</option>
+                                                    <option value="PCS">PCS</option>
+                                                </select>
+                                            </td>
+                                            <td className="p-2 align-top">
+                                                <input
+                                                    type="number"
+                                                    value={item.unit_price}
+                                                    onChange={(e) => updateLineItem(item.id, 'unit_price', e.target.value)}
+                                                    className="w-full px-2 py-1 border rounded text-right"
+                                                />
+                                            </td>
+                                            <td className="p-2 align-top">
+                                                <input
+                                                    type="number"
+                                                    value={item.discount_percent}
+                                                    onChange={(e) => updateLineItem(item.id, 'discount_percent', e.target.value)}
+                                                    className="w-full px-2 py-1 border rounded text-right"
+                                                />
+                                            </td>
+                                            <td className="p-2 align-top text-right font-medium">
+                                                ${item.total.toFixed(2)}
+                                            </td>
+                                            <td className="p-2 align-top text-center">
+                                                <button onClick={() => removeLineItem(item.id)} className="text-red-500 hover:text-red-700">
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <Button type="button" onClick={addLineItem} className="mt-4" variant="secondary">
+                            <Plus className="w-4 h-4" /> Add Item
                         </Button>
                     </div>
-
-                    <div className="overflow-x-auto">
-                        <table className="table">
-                            <thead>
-                                <tr>
-                                    <th>Item Name</th>
-                                    <th>Description</th>
-                                    <th>Qty</th>
-                                    <th>Unit Price</th>
-                                    <th>Discount %</th>
-                                    <th>Tax %</th>
-                                    <th>Total</th>
-                                    <th>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {lineItems.map((item) => (
-                                    <tr key={item.id}>
-                                        <td>
-                                            <select
-                                                value={item.item_id}
-                                                onChange={(e) => updateLineItem(item.id, 'item_id', e.target.value)}
-                                                className="input w-full min-w-[180px] bg-white"
-                                                required
-                                            >
-                                                <option value="">Select Item</option>
-                                                {items.map((inventoryItem) => (
-                                                    <option key={inventoryItem.id} value={inventoryItem.id}>
-                                                        {inventoryItem.name} - ${inventoryItem.price.toFixed(2)}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="text"
-                                                value={item.description}
-                                                onChange={(e) => updateLineItem(item.id, 'description', e.target.value)}
-                                                className="input w-full min-w-[150px] bg-white"
-                                                placeholder="Description"
-                                            />
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="number"
-                                                value={item.quantity}
-                                                onChange={(e) => updateLineItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                                                className="input w-20 bg-white"
-                                                min="1"
-                                                required
-                                            />
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="number"
-                                                value={item.unit_price}
-                                                onChange={(e) => updateLineItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                                                className="input w-28 bg-white"
-                                                step="0.01"
-                                                min="0"
-                                                required
-                                            />
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="number"
-                                                value={item.discount}
-                                                onChange={(e) => updateLineItem(item.id, 'discount', parseFloat(e.target.value) || 0)}
-                                                className="input w-20 bg-white"
-                                                step="0.01"
-                                                min="0"
-                                                max="100"
-                                            />
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="number"
-                                                value={item.tax_rate}
-                                                onChange={(e) => updateLineItem(item.id, 'tax_rate', parseFloat(e.target.value) || 0)}
-                                                className="input w-20 bg-white"
-                                                step="0.01"
-                                                min="0"
-                                                max="100"
-                                            />
-                                        </td>
-                                        <td className="font-semibold">${item.total.toFixed(2)}</td>
-                                        <td>
-                                            <button
-                                                type="button"
-                                                onClick={() => removeLineItem(item.id)}
-                                                className="text-red-600 hover:text-red-800"
-                                                disabled={lineItems.length === 1}
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
                 </Card>
 
                 <Card>
-                    <h2 className="text-xl font-semibold mb-4">Totals</h2>
-                    <div className="space-y-4 max-w-md ml-auto">
-                        <div className="flex justify-between items-center">
-                            <span className="text-gray-600">Subtotal:</span>
-                            <span className="font-semibold text-lg">${totals.subtotal.toFixed(2)}</span>
+                    <div className="p-6">
+                        <div className="flex justify-end">
+                            <div className="w-80 space-y-3">
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-600">Subtotal:</span>
+                                    <span className="font-medium">${totals.subtotal.toFixed(2)}</span>
+                                </div>
+                                <div className="border-t pt-3 flex justify-between">
+                                    <span className="text-lg font-semibold">Total:</span>
+                                    <span className="text-lg font-bold text-blue-600">${totals.total.toFixed(2)}</span>
+                                </div>
+                            </div>
                         </div>
-                        <div className="flex justify-between items-center gap-4">
-                            <label className="text-gray-600">Discount (%):</label>
-                            <input
-                                type="number"
-                                value={formData.discount}
-                                onChange={(e) => setFormData({ ...formData, discount: parseFloat(e.target.value) || 0 })}
-                                className="input w-24 bg-white"
-                                step="0.01"
-                                min="0"
-                                max="100"
+                        <div className="mt-6">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                            <textarea
+                                value={notes}
+                                onChange={(e) => setNotes(e.target.value)}
+                                rows={3}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
                             />
-                            <span className="font-semibold w-24 text-right">-${totals.discountAmount.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between items-center gap-4">
-                            <label className="text-gray-600">Tax (%):</label>
-                            <input
-                                type="number"
-                                value={formData.tax}
-                                onChange={(e) => setFormData({ ...formData, tax: parseFloat(e.target.value) || 0 })}
-                                className="input w-24 bg-white"
-                                step="0.01"
-                                min="0"
-                                max="100"
-                            />
-                            <span className="font-semibold w-24 text-right">+${totals.taxAmount.toFixed(2)}</span>
-                        </div>
-                        <div className="border-t pt-4 flex justify-between items-center">
-                            <span className="text-xl font-bold">Total:</span>
-                            <span className="text-2xl font-bold text-blue-600">${totals.total.toFixed(2)}</span>
                         </div>
                     </div>
                 </Card>
 
-                <div className="flex gap-4 justify-end">
-                    <Button type="button" variant="secondary" onClick={() => navigate('/invoices')}>
-                        Cancel
-                    </Button>
-                    <Button type="submit" disabled={loading || !formData.customer_id}>
-                        {loading ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Invoice' : 'Create Invoice')}
-                    </Button>
+                <div className="flex justify-end gap-4">
+                    <Button type="button" variant="secondary" onClick={() => navigate('/invoices')}>Cancel</Button>
+                    <Button type="submit" disabled={loading}>{loading ? 'Saving...' : 'Save Invoice'}</Button>
                 </div>
             </form>
         </div>
