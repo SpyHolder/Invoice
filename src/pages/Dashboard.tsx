@@ -32,7 +32,7 @@ export const Dashboard = () => {
                 const { count: pendingCount } = await supabase
                     .from('invoices')
                     .select('*', { count: 'exact', head: true })
-                    .eq('status', 'unpaid');
+                    .eq('payment_status', 'unpaid');
 
                 // Fetch low stock items count (items where stock <= min_stock)
                 // Note: PostgREST can't compare two columns directly, so we fetch and filter in JS
@@ -46,8 +46,9 @@ export const Dashboard = () => {
 
                 // Fetch total customers
                 const { count: customersCount } = await supabase
-                    .from('customers')
-                    .select('*', { count: 'exact', head: true });
+                    .from('partners')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('type', 'customer');
 
                 setStats({
                     totalRevenue,

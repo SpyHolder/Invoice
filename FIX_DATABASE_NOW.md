@@ -13,7 +13,7 @@ Jalankan migration file yang sudah saya buat untuk update RLS policies.
 1. Buka [Supabase Dashboard](https://app.supabase.com)
 2. Pilih project Anda
 3. Klik **SQL Editor** di sidebar kiri
-4. Copy seluruh isi file `supabase/migrations/20260119000000_fix_rls_policies.sql`
+4. Copy seluruh isi file `supabase/migrations/20260201150000_fix_quotation_items_schema.sql`
 5. Paste ke SQL Editor
 6. Klik **Run** atau tekan Ctrl+Enter
 7. Refresh aplikasi Anda di browser

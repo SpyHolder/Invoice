@@ -6,9 +6,12 @@ export const Sidebar = () => {
         { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
         { to: '/invoices', icon: FileText, label: 'Invoices' },
         { to: '/quotations', icon: FileCheck, label: 'Quotations' },
+        { to: '/sales-orders', icon: FileText, label: 'Sales Orders' }, // Added
+        { to: '/delivery-orders', icon: Package, label: 'Delivery Orders' }, // Added
         { to: '/purchase-orders', icon: ShoppingCart, label: 'Purchase Orders' },
         { to: '/items', icon: Package, label: 'Items' },
         { to: '/customers', icon: Users, label: 'Customers' },
+        { to: '/vendors', icon: Building2, label: 'Vendors' }, // Added
     ];
 
     return (

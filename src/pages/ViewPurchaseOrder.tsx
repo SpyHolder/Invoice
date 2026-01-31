@@ -1,35 +1,26 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { useReactToPrint } from 'react-to-print';
+import { ArrowLeft, Printer } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { supabase } from '../lib/supabase';
-
-interface PurchaseOrder {
-    id: string;
-    po_number: string;
-    vendor_name: string;
-    date: string;
-    total: number;
-    status: string;
-    notes: string;
-    created_at: string;
-}
-
-interface PurchaseOrderItem {
-    id: string;
-    item_name: string;
-    quantity: number;
-    unit_price: number;
-    total: number;
-}
+import { supabase, PurchaseOrder, PurchaseOrderItem, Partner, Company } from '../lib/supabase';
+import { PurchaseOrderTemplate } from '../components/PurchaseOrderTemplate';
 
 export const ViewPurchaseOrder = () => {
     const { id } = useParams();
     const navigate = useNavigate();
+    const printRef = useRef<HTMLDivElement>(null);
 
     const [po, setPo] = useState<PurchaseOrder | null>(null);
+    const [vendor, setVendor] = useState<Partner | null>(null);
     const [items, setItems] = useState<PurchaseOrderItem[]>([]);
+    const [company, setCompany] = useState<Company | undefined>(undefined);
     const [loading, setLoading] = useState(true);
+
+    const handlePrint = useReactToPrint({
+        contentRef: printRef,
+        documentTitle: po ? `PO-${po.po_number}` : 'Purchase Order',
+    });
 
     useEffect(() => {
         fetchPOData();
@@ -40,7 +31,7 @@ export const ViewPurchaseOrder = () => {
 
         setLoading(true);
         try {
-            // Fetch purchase order
+            // Fetch PO
             const { data: poData, error: poError } = await supabase
                 .from('purchase_orders')
                 .select('*')
@@ -50,28 +41,42 @@ export const ViewPurchaseOrder = () => {
             if (poError) throw poError;
             setPo(poData);
 
-            // Fetch PO items with item details join
+            // Fetch Vendor
+            if (poData.vendor_id) {
+                const { data: vendorData, error: vendorError } = await supabase
+                    .from('partners')
+                    .select('*')
+                    .eq('id', poData.vendor_id)
+                    .single();
+
+                if (vendorError) {
+                    console.error('Error fetching vendor:', vendorError);
+                } else {
+                    setVendor(vendorData);
+                }
+            }
+
+            // Fetch Items
             const { data: itemsData, error: itemsError } = await supabase
                 .from('purchase_order_items')
-                .select(`
-                    *,
-                    items (
-                        name,
-                        description
-                    )
-                `)
-                .eq('purchase_order_id', id)
-                .order('id');
+                .select('*')
+                .eq('purchase_order_id', id);
 
             if (itemsError) throw itemsError;
+            setItems(itemsData || []);
 
-            // Map the data to include item name from join or fallback to item_name field
-            const mappedItems = (itemsData || []).map(item => ({
-                ...item,
-                item_name: item.items?.name || item.item_name || 'Unknown Item'
-            }));
+            // Fetch Company Info
+            const { data: companyData, error: companyError } = await supabase
+                .from('companies')
+                .select('*')
+                .limit(1)
+                .single();
 
-            setItems(mappedItems);
+            if (companyError && companyError.code !== 'PGRST116') {
+                console.error('Error fetching company:', companyError);
+            }
+            if (companyData) setCompany(companyData);
+
         } catch (error) {
             console.error('Error fetching purchase order:', error);
             alert('Failed to load purchase order');
@@ -97,14 +102,6 @@ export const ViewPurchaseOrder = () => {
         );
     }
 
-    const formatDate = (dateString: string) => {
-        return new Date(dateString).toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-        });
-    };
-
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -118,82 +115,29 @@ export const ViewPurchaseOrder = () => {
                         <p className="text-gray-600 mt-1">{po.po_number}</p>
                     </div>
                 </div>
+                <Button onClick={handlePrint}>
+                    <Printer className="w-4 h-4" />
+                    Print PO
+                </Button>
             </div>
 
-            <div className="bg-white rounded-lg shadow-lg p-8">
-                {/* Header */}
-                <div className="flex justify-between items-start mb-8">
-                    <div>
-                        <h2 className="text-2xl font-bold text-purple-600 mb-2">PURCHASE ORDER</h2>
-                        <p className="text-sm text-gray-600">PO Number:</p>
-                        <p className="text-lg font-semibold">{po.po_number}</p>
-                    </div>
-                    <div className="text-right">
-                        <p className="text-sm font-semibold text-gray-600">Status:</p>
-                        <span
-                            className={`px-3 py-1 rounded-full text-sm font-semibold ${po.status === 'received'
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-yellow-100 text-yellow-800'
-                                }`}
-                        >
-                            {po.status}
-                        </span>
-                    </div>
-                </div>
-
-                {/* Vendor & Date */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-                    <div>
-                        <p className="text-sm font-semibold text-gray-600 mb-2">VENDOR:</p>
-                        <p className="text-lg font-semibold">{po.vendor_name}</p>
-                    </div>
-                    <div className="text-right">
-                        <div className="mb-2">
-                            <span className="text-sm font-semibold text-gray-600">Date: </span>
-                            <span className="text-sm">{formatDate(po.date)}</span>
+            <div className="bg-gray-100 p-4 rounded-lg overflow-auto">
+                <div className="origin-top scale-90">
+                    {vendor ? (
+                        <PurchaseOrderTemplate
+                            ref={printRef}
+                            po={po}
+                            vendor={vendor}
+                            items={items}
+                            company={company}
+                        />
+                    ) : (
+                        <div className="bg-white p-8 text-center text-red-500">
+                            Vendor information missing or deleted.
                         </div>
-                    </div>
+                    )}
+
                 </div>
-
-                {/* Line Items */}
-                <table className="w-full mb-8">
-                    <thead>
-                        <tr className="border-b-2 border-gray-300">
-                            <th className="text-left py-3 text-sm font-semibold">ITEM</th>
-                            <th className="text-right py-3 text-sm font-semibold">QTY</th>
-                            <th className="text-right py-3 text-sm font-semibold">UNIT PRICE</th>
-                            <th className="text-right py-3 text-sm font-semibold">TOTAL</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {items.map((item) => (
-                            <tr key={item.id} className="border-b border-gray-200">
-                                <td className="py-3">{item.item_name}</td>
-                                <td className="py-3 text-right">{item.quantity}</td>
-                                <td className="py-3 text-right">${item.unit_price.toFixed(2)}</td>
-                                <td className="py-3 text-right font-semibold">${item.total.toFixed(2)}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-
-                {/* Total */}
-                <div className="flex justify-end mb-8">
-                    <div className="w-80">
-                        <div className="flex justify-between pt-3 border-t-2 border-gray-300">
-                            <span className="text-xl font-bold">TOTAL:</span>
-                            <span className="text-xl font-bold text-purple-600">${po.total.toFixed(2)}</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Notes */}
-                {po.notes && (
-                    <div>
-                        <p className="text-sm font-semibold text-gray-600 mb-2">NOTES:</p>
-                        <p className="text-sm text-gray-700">{po.notes}</p>
-                    </div>
-                )}
             </div>
         </div>
     );

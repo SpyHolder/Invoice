@@ -4,23 +4,24 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
-import { supabase, Customer } from '../lib/supabase';
+import { supabase, Partner } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 
 export const Customers = () => {
     const { user } = useAuth();
     const { showToast } = useToast();
-    const [customers, setCustomers] = useState<Customer[]>([]);
-    const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
+    const [customers, setCustomers] = useState<Partner[]>([]);
+    const [filteredCustomers, setFilteredCustomers] = useState<Partner[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [loading, setLoading] = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+    const [editingCustomer, setEditingCustomer] = useState<Partner | null>(null);
     const [submitting, setSubmitting] = useState(false);
 
     const [formData, setFormData] = useState({
-        name: '',
+        company_name: '',
+        attn_name: '',
         email: '',
         phone: '',
         address: '',
@@ -32,10 +33,10 @@ export const Customers = () => {
 
     useEffect(() => {
         const filtered = customers.filter(customer =>
-            customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            customer.company_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            customer.attn_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             customer.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            customer.phone?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            customer.address?.toLowerCase().includes(searchQuery.toLowerCase())
+            customer.phone?.toLowerCase().includes(searchQuery.toLowerCase())
         );
         setFilteredCustomers(filtered);
     }, [customers, searchQuery]);
@@ -44,8 +45,9 @@ export const Customers = () => {
         if (!user) return;
 
         const { data, error } = await supabase
-            .from('customers')
+            .from('partners')
             .select('*')
+            .eq('type', 'customer')
             .order('created_at', { ascending: false });
 
         if (!error && data) {
@@ -61,19 +63,21 @@ export const Customers = () => {
         setSubmitting(true);
 
         const customerData = {
-            name: formData.name,
+            company_name: formData.company_name,
+            attn_name: formData.attn_name,
             email: formData.email || '',
             phone: formData.phone || '',
             address: formData.address || '',
+            type: 'customer',
         };
 
         try {
             if (editingCustomer) {
-                const { error } = await supabase.from('customers').update(customerData).eq('id', editingCustomer.id);
+                const { error } = await supabase.from('partners').update(customerData).eq('id', editingCustomer.id);
                 if (error) throw error;
                 showToast('Customer updated successfully!', 'success');
             } else {
-                const { error } = await supabase.from('customers').insert([customerData]);
+                const { error } = await supabase.from('partners').insert([customerData]);
                 if (error) throw error;
                 showToast('Customer added successfully!', 'success');
             }
@@ -89,10 +93,11 @@ export const Customers = () => {
         }
     };
 
-    const handleEdit = (customer: Customer) => {
+    const handleEdit = (customer: Partner) => {
         setEditingCustomer(customer);
         setFormData({
-            name: customer.name,
+            company_name: customer.company_name,
+            attn_name: customer.attn_name || '',
             email: customer.email || '',
             phone: customer.phone || '',
             address: customer.address || '',
@@ -103,7 +108,7 @@ export const Customers = () => {
     const handleDelete = async (id: string, customerName: string) => {
         if (confirm(`Are you sure you want to delete "${customerName}"? This action cannot be undone.`)) {
             try {
-                const { error } = await supabase.from('customers').delete().eq('id', id);
+                const { error } = await supabase.from('partners').delete().eq('id', id);
                 if (error) throw error;
                 showToast('Customer deleted successfully!', 'success');
                 await fetchCustomers();
@@ -115,7 +120,7 @@ export const Customers = () => {
     };
 
     const resetForm = () => {
-        setFormData({ name: '', email: '', phone: '', address: '' });
+        setFormData({ company_name: '', attn_name: '', email: '', phone: '', address: '' });
         setEditingCustomer(null);
     };
 
@@ -138,7 +143,7 @@ export const Customers = () => {
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
                     <input
                         type="text"
-                        placeholder="Search customers by name, email, phone, or address..."
+                        placeholder="Search customers..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="input bg-white pl-10"
@@ -163,20 +168,20 @@ export const Customers = () => {
                         <table className="table">
                             <thead>
                                 <tr>
-                                    <th>Name</th>
+                                    <th>Company</th>
+                                    <th>Contact</th>
                                     <th>Email</th>
                                     <th>Phone</th>
-                                    <th>Address</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {filteredCustomers.map((customer) => (
                                     <tr key={customer.id}>
-                                        <td className="font-medium">{customer.name}</td>
+                                        <td className="font-medium">{customer.company_name}</td>
+                                        <td className="text-gray-600">{customer.attn_name || '-'}</td>
                                         <td className="text-gray-600">{customer.email || '-'}</td>
                                         <td className="text-gray-600">{customer.phone || '-'}</td>
-                                        <td className="text-gray-600">{customer.address || '-'}</td>
                                         <td>
                                             <div className="flex gap-2">
                                                 <button
@@ -186,7 +191,7 @@ export const Customers = () => {
                                                     <Edit2 className="w-4 h-4" />
                                                 </button>
                                                 <button
-                                                    onClick={() => handleDelete(customer.id, customer.name)}
+                                                    onClick={() => handleDelete(customer.id, customer.company_name)}
                                                     className="text-red-600 hover:text-red-800"
                                                 >
                                                     <Trash2 className="w-4 h-4" />
@@ -208,10 +213,15 @@ export const Customers = () => {
             >
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <Input
-                        label="Customer Name"
-                        value={formData.name}
-                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        label="Company Name"
+                        value={formData.company_name}
+                        onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
                         required
+                    />
+                    <Input
+                        label="Contact Person"
+                        value={formData.attn_name}
+                        onChange={(e) => setFormData({ ...formData, attn_name: e.target.value })}
                     />
                     <Input
                         label="Email"

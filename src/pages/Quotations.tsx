@@ -25,7 +25,7 @@ export const Quotations = () => {
             .from('quotations')
             .select(`
         *,
-        customer:customers(name)
+        customer:partners!customer_id(company_name, type)
       `)
             .order('created_at', { ascending: false });
 
@@ -35,7 +35,7 @@ export const Quotations = () => {
         setLoading(false);
     };
 
-    const convertToInvoice = async (quotation: Quotation) => {
+    const convertToSalesOrder = async (quotation: Quotation) => {
         try {
             // Fetch quotation items
             const { data: quotationItems } = await supabase
@@ -43,70 +43,52 @@ export const Quotations = () => {
                 .select('*')
                 .eq('quotation_id', quotation.id);
 
-            if (!quotationItems) {
+            if (!quotationItems || quotationItems.length === 0) {
                 showToast('No items found in quotation', 'error');
                 return;
             }
 
-            // Create invoice
-            const { data: newInvoice, error } = await supabase
-                .from('invoices')
-                .insert([
-                    {
-                        invoice_number: 'INV-' + Date.now(),
-                        customer_id: quotation.customer_id,
-                        date: new Date().toISOString().split('T')[0],
-                        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                        status: 'unpaid',
-                        subtotal: quotation.subtotal,
-                        discount: quotation.discount,
-                        tax: quotation.tax,
-                        total: quotation.total,
-                        notes: quotation.notes,
-                    },
-                ])
+            // Create Sales Order
+            const { data: newSO, error: soError } = await supabase
+                .from('sales_orders')
+                .insert([{
+                    so_number: 'CNK-SO-' + Date.now(),
+                    quotation_id: quotation.id,
+                    status: 'confirmed'
+                }])
                 .select()
                 .single();
 
-            if (error || !newInvoice) {
-                showToast('Failed to create invoice', 'error');
+            if (soError || !newSO) {
+                console.error('SO Error:', soError);
+                showToast('Failed to create Sales Order', 'error');
                 return;
             }
 
-            // Create invoice items and deduct stock
-            for (const item of quotationItems) {
-                await supabase.from('invoice_items').insert([
-                    {
-                        invoice_id: newInvoice.id,
-                        item_id: item.item_id,
-                        quantity: item.quantity,
-                        unit_price: item.unit_price,
-                        amount: item.amount,
-                    },
-                ]);
+            // Create SO Items (copy from quotation items)
+            const soItems = quotationItems.map(item => ({
+                so_id: newSO.id,
+                description: item.item_description,
+                quantity: item.quantity,
+                uom: item.uom,
+                phase_name: null // User will assign phases in SO edit form
+            }));
 
-                // Deduct stock
-                if (item.item_id) {
-                    const { data: currentItem } = await supabase
-                        .from('items')
-                        .select('stock')
-                        .eq('id', item.item_id)
-                        .single();
+            const { error: itemsError } = await supabase
+                .from('sales_order_items')
+                .insert(soItems);
 
-                    if (currentItem) {
-                        await supabase
-                            .from('items')
-                            .update({ stock: currentItem.stock - item.quantity })
-                            .eq('id', item.item_id);
-                    }
-                }
+            if (itemsError) {
+                console.error('Items Error:', itemsError);
+                showToast('Failed to create SO items', 'error');
+                return;
             }
 
-            showToast('Quotation converted to invoice successfully!', 'success');
-            navigate('/invoices');
+            showToast('Sales Order created successfully!', 'success');
+            navigate(`/sales-orders/edit/${newSO.id}`);
         } catch (error) {
-            console.error('Error converting to invoice:', error);
-            showToast('Failed to convert to invoice', 'error');
+            console.error('Error converting to Sales Order:', error);
+            showToast('Failed to convert to Sales Order', 'error');
         }
     };
 
@@ -154,6 +136,7 @@ export const Quotations = () => {
                             <thead>
                                 <tr>
                                     <th>Customer</th>
+                                    <th>Quote No</th>
                                     <th>Date</th>
                                     <th>Valid Until</th>
                                     <th>Amount</th>
@@ -164,10 +147,11 @@ export const Quotations = () => {
                             <tbody>
                                 {quotations.map((quotation) => (
                                     <tr key={quotation.id}>
-                                        <td className="font-medium">{quotation.customer?.name}</td>
+                                        <td className="font-medium">{quotation.customer?.company_name}</td>
+                                        <td>{quotation.quotation_number || quotation.quote_number}</td>
                                         <td>{new Date(quotation.date).toLocaleDateString()}</td>
-                                        <td>{new Date(quotation.valid_until).toLocaleDateString()}</td>
-                                        <td>${quotation.total.toFixed(2)}</td>
+                                        <td>{quotation.validity_date ? new Date(quotation.validity_date).toLocaleDateString() : '-'}</td>
+                                        <td>${(quotation.total_amount || quotation.total || 0).toFixed(2)}</td>
                                         <td>
                                             <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
                                                 {quotation.status}
@@ -190,9 +174,9 @@ export const Quotations = () => {
                                                     <Edit2 className="w-4 h-4" />
                                                 </button>
                                                 <button
-                                                    onClick={() => convertToInvoice(quotation)}
-                                                    className="text-purple-600 hover:text-purple-800"
-                                                    title="Convert to Invoice"
+                                                    onClick={() => convertToSalesOrder(quotation)}
+                                                    className="text-blue-600 hover:text-blue-800"
+                                                    title="Create Sales Order"
                                                 >
                                                     <ArrowRight className="w-4 h-4" />
                                                 </button>

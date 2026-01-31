@@ -25,7 +25,7 @@ export const Invoices = () => {
             .from('invoices')
             .select(`
         *,
-        customer:customers(name)
+        customer:partners!customer_id(company_name)
       `)
             .order('created_at', { ascending: false });
 
@@ -36,10 +36,10 @@ export const Invoices = () => {
     };
 
     const toggleStatus = async (invoice: Invoice) => {
-        const newStatus = invoice.status === 'paid' ? 'unpaid' : 'paid';
+        const newStatus = invoice.payment_status === 'paid' ? 'unpaid' : 'paid';
         await supabase
             .from('invoices')
-            .update({ status: newStatus })
+            .update({ payment_status: newStatus })  // Database column is payment_status
             .eq('id', invoice.id);
         fetchInvoices();
     };
@@ -97,10 +97,10 @@ export const Invoices = () => {
                             <tbody>
                                 {invoices.map((invoice) => (
                                     <tr key={invoice.id}>
-                                        <td className="font-medium">{invoice.customer?.name}</td>
+                                        <td className="font-medium">{invoice.customer?.company_name}</td>
                                         <td>{new Date(invoice.date).toLocaleDateString()}</td>
-                                        <td>{new Date(invoice.due_date).toLocaleDateString()}</td>
-                                        <td>${invoice.total.toFixed(2)}</td>
+                                        <td>{invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : '-'}</td>
+                                        <td>${invoice.grand_total?.toFixed(2) || '0.00'}</td>
                                         <td>
                                             <div className="flex gap-2">
                                                 <button
@@ -119,13 +119,12 @@ export const Invoices = () => {
                                                 </button>
                                                 <button
                                                     onClick={() => toggleStatus(invoice)}
-                                                    className={`px-2 py-1 rounded text-xs font-semibold ${invoice.status === 'paid'
-                                                        ? 'bg-green-100 text-green-800'
-                                                        : 'bg-red-100 text-red-800'
+                                                    className={`px-3 py-1 rounded-full text-sm ${invoice.payment_status === 'paid' ? 'bg-green-100 text-green-800' :
+                                                            invoice.payment_status === 'partial' ? 'bg-yellow-100 text-yellow-800' :
+                                                                'bg-red-100 text-red-800'
                                                         }`}
-                                                    title="Toggle Status"
                                                 >
-                                                    {invoice.status === 'paid' ? 'Paid' : 'Unpaid'}
+                                                    {invoice.payment_status}
                                                 </button>
                                                 <button
                                                     onClick={() => handleDelete(invoice.id)}

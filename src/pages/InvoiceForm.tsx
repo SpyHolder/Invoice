@@ -1,522 +1,660 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, ArrowLeft } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { supabase, Customer, Item } from '../lib/supabase';
-import { useAuth } from '../contexts/AuthContext';
+import { supabase, Partner } from '../lib/supabase';
+// import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 
-interface LineItem {
+interface InvoiceLineItem {
     id: string;
-    item_id: string;
-    item_name: string;
+    item_code: string;
+    item_id: string; // Optional, for lookup only, not in DB
     description: string;
     quantity: number;
+    uom: string;
     unit_price: number;
-    discount: number;
-    tax_rate: number;
-    total: number;
+    total_price: number; // Match DB column name (was 'total')
 }
 
 export const InvoiceForm = () => {
-    const { user } = useAuth();
+    // const { user } = useAuth();
     const { id } = useParams();
+    const [searchParams] = useSearchParams();
+    const soIdParam = searchParams.get('so_id');
+    const doIdParam = searchParams.get('do_id');
     const navigate = useNavigate();
     const { showToast } = useToast();
-    const [customers, setCustomers] = useState<Customer[]>([]);
-    const [items, setItems] = useState<Item[]>([]);
+
     const [loading, setLoading] = useState(false);
     const [isEditMode, setIsEditMode] = useState(false);
 
+    // Data sources
+    const [customers, setCustomers] = useState<Partner[]>([]);
+    const [salesOrders, setSalesOrders] = useState<any[]>([]); // SOs specific to customer
+
     const [formData, setFormData] = useState({
         customer_id: '',
+        so_id: '',
+        invoice_number: '',
         date: new Date().toISOString().split('T')[0],
         due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        notes: '',
+        terms: '30 Days',
+        subject: '',
+        status: 'unpaid',
+        pricing_mode: 'standard', // 'standard' (itemized) or 'milestone' (progressive)
+        milestone_description: '',
+        milestone_amount: 0,
+        subtotal: 0,
         discount: 0,
-        tax: 0,
+        tax: 0, // global tax percent (GST)
+        notes: '',
     });
 
-    const [lineItems, setLineItems] = useState<LineItem[]>([
+    const [lineItems, setLineItems] = useState<InvoiceLineItem[]>([
         {
             id: '1',
+            item_code: '',
             item_id: '',
-            item_name: '',
             description: '',
             quantity: 1,
+            uom: 'EA',
             unit_price: 0,
-            discount: 0,
-            tax_rate: 0,
-            total: 0,
-        },
+            total_price: 0
+        }
     ]);
 
     useEffect(() => {
         fetchCustomers();
-        fetchItems();
-    }, []);
+        const doIdParam = searchParams.get('do_id');
+        const soIdParam = searchParams.get('so_id');
 
-    useEffect(() => {
-        // Only load invoice after items are fetched and we have an ID
-        if (id && items.length > 0) {
+        if (id) {
             setIsEditMode(true);
             loadInvoice(id);
+        } else if (doIdParam) {
+            handleDOSelection(doIdParam);
+        } else if (soIdParam) {
+            handleSOSelectionForInvoice(soIdParam);
         }
-    }, [id, items.length]);
+    }, [id, searchParams]);
 
     const fetchCustomers = async () => {
-        const { data } = await supabase.from('customers').select('*').order('name');
+        const { data } = await supabase.from('partners').select('*').eq('type', 'customer').order('company_name');
         if (data) setCustomers(data);
     };
 
-    const fetchItems = async () => {
-        const { data } = await supabase.from('items').select('*').order('name');
-        if (data) setItems(data);
+    const fetchSalesOrders = async (customerId: string) => {
+        if (!customerId) {
+            setSalesOrders([]);
+            return;
+        }
+
+        const { data } = await supabase.from('sales_orders')
+            .select('*, quotations!inner(customer_id)')
+            .eq('status', 'confirmed')
+            .eq('quotations.customer_id', customerId);
+
+        if (data) setSalesOrders(data);
+    };
+
+    const handleCustomerChange = async (custId: string) => {
+        setFormData(prev => ({ ...prev, customer_id: custId, so_id: '' }));
+        await fetchSalesOrders(custId);
+    };
+
+    // Handle when creating invoice directly from SO (combine all DOs)
+    const handleSOSelectionForInvoice = async (soId: string) => {
+        setFormData(prev => ({ ...prev, so_id: soId }));
+
+        // Fetch customer from SO → Quotation
+        const { data: so } = await supabase
+            .from('sales_orders')
+            .select('quotation_id')
+            .eq('id', soId)
+            .single();
+
+        if (so && so.quotation_id) {
+            const { data: quotation } = await supabase
+                .from('quotations')
+                .select('customer_id')
+                .eq('id', so.quotation_id)
+                .single();
+
+            if (quotation) {
+                setFormData(prev => ({ ...prev, customer_id: quotation.customer_id, so_id: soId }));
+            }
+        }
+
+        // Fetch all DOs from this SO
+        const { data: dos } = await supabase
+            .from('delivery_orders')
+            .select('id, do_number')
+            .eq('so_id', soId);
+
+        if (!dos || dos.length === 0) {
+            showToast('No delivery orders found for this SO', 'warning');
+            return;
+        }
+
+        // Fetch ALL items from ALL DOs
+        const doIds = dos.map(d => d.id);
+        const { data: allDOItems } = await supabase
+            .from('delivery_order_items')
+            .select('*')
+            .in('do_id', doIds);
+
+        if (allDOItems && allDOItems.length > 0) {
+            // Lookup prices from items master data
+            const descriptions = allDOItems.map(i => i.description).filter(Boolean);
+            const { data: masterItems } = await supabase
+                .from('items')
+                .select('description, price')
+                .in('description', descriptions);
+
+            const priceMap = new Map();
+            if (masterItems) {
+                masterItems.forEach(item => {
+                    if (item.description) priceMap.set(item.description, item.price);
+                });
+            }
+
+            // Combine all DO items into line items with prices
+            setLineItems(allDOItems.map((item, idx) => ({
+                id: `combined-${idx}`,
+                item_code: item.item_code || '',
+                item_id: '',
+                description: item.description || '',
+                quantity: item.quantity,
+                uom: item.uom || 'EA',
+                unit_price: priceMap.get(item.description) || 0,
+                total_price: (priceMap.get(item.description) || 0) * item.quantity
+            })));
+
+            // Set DO reference to all DO numbers
+            const doNumbers = dos.map(d => d.do_number).join(', ');
+            showToast(`Loaded ${allDOItems.length} items from ${dos.length} delivery order(s): ${doNumbers}`, 'success');
+        }
+    };
+
+    const handleSOSelection = async (soId: string) => {
+        // Load SO details
+        const { data: so } = await supabase.from('sales_orders').select('*, quotations(customer_id, subject)').eq('id', soId).single();
+        if (so) {
+            setFormData(prev => ({
+                ...prev,
+                so_id: so.id,
+                customer_id: so.quotations?.customer_id || prev.customer_id,
+                subject: so.quotations?.subject || prev.subject
+            }));
+
+            // If customer was not set, set it and fetch other SOs?
+            if (!formData.customer_id && so.quotations?.customer_id) {
+                // await fetchSalesOrders(so.quotations.customer_id); // Might loop if not careful
+            }
+
+            // If Standard mode, maybe pull items?
+            if (formData.pricing_mode === 'standard') {
+                importItemsFromSO(soId);
+            }
+        }
+    };
+
+    const importItemsFromSO = async (soId: string) => {
+        const { data: items } = await supabase.from('sales_order_items').select('*').eq('so_id', soId);
+        if (items && items.length > 0) {
+            // Lookup prices from items master data
+            const descriptions = items.map(i => i.description).filter(Boolean);
+            const { data: masterItems } = await supabase
+                .from('items')
+                .select('description, price')
+                .in('description', descriptions);
+
+            const priceMap = new Map();
+            if (masterItems) {
+                masterItems.forEach(item => {
+                    if (item.description) priceMap.set(item.description, item.price);
+                });
+            }
+
+            setLineItems(items.map((i, idx) => ({
+                id: `so-${idx}`,
+                item_code: '',
+                item_id: '',
+                description: i.description || '',
+                quantity: i.quantity,
+                uom: i.uom || 'EA',
+                unit_price: priceMap.get(i.description) || 0, // Auto-lookup from items table
+                total_price: (priceMap.get(i.description) || 0) * i.quantity
+            })));
+        }
+    };
+
+    const handleDOSelection = async (doId: string) => {
+        // Fetch DO details
+        const { data: doData } = await supabase.from('delivery_orders').select('*').eq('id', doId).single();
+        if (!doData) return;
+
+        // Fetch DO items
+        const { data: doItems } = await supabase.from('delivery_order_items').select('*').eq('do_id', doId);
+
+        if (doData) {
+            setFormData(prev => ({
+                ...prev,
+                so_id: doData.so_id || '',
+                subject: doData.subject || prev.subject,
+            }));
+
+            // Get customer from SO if available
+            if (doData.so_id) {
+                const { data: so } = await supabase.from('sales_orders').select('quotation_id').eq('id', doData.so_id).single();
+                if (so && so.quotation_id) {
+                    const { data: q } = await supabase.from('quotations').select('customer_id').eq('id', so.quotation_id).single();
+                    if (q) {
+                        setFormData(prev => ({ ...prev, customer_id: q.customer_id }));
+                    }
+                }
+            }
+        }
+
+        // Pre-populate line items from DO with price lookup
+        if (doItems && doItems.length > 0) {
+            // Lookup prices from items master data
+            const descriptions = doItems.map(i => i.description).filter(Boolean);
+            const { data: masterItems } = await supabase
+                .from('items')
+                .select('description, price')
+                .in('description', descriptions);
+
+            const priceMap = new Map();
+            if (masterItems) {
+                masterItems.forEach(item => {
+                    if (item.description) priceMap.set(item.description, item.price);
+                });
+            }
+
+            setLineItems(doItems.map((item, idx) => ({
+                id: `do-${idx}`,
+                item_code: item.item_code || '',
+                item_id: '',
+                description: item.description || '',
+                quantity: item.quantity,
+                uom: item.uom || 'EA',
+                unit_price: priceMap.get(item.description) || 0, // Auto-lookup from items table
+                total_price: (priceMap.get(item.description) || 0) * item.quantity
+            })));
+            showToast(`Loaded ${doItems.length} items from Delivery Order with prices`, 'success');
+        }
     };
 
     const loadInvoice = async (invoiceId: string) => {
         setLoading(true);
         try {
-            // Load invoice header
-            const { data: invoice, error: invoiceError } = await supabase
-                .from('invoices')
-                .select('*')
-                .eq('id', invoiceId)
-                .single();
+            const { data: inv, error } = await supabase.from('invoices').select('*').eq('id', invoiceId).single();
+            if (error) throw error;
 
-            if (invoiceError) throw invoiceError;
+            setFormData({
+                customer_id: inv.customer_id,
+                so_id: inv.so_id || '',
+                invoice_number: inv.invoice_number,
+                date: inv.date,
+                due_date: inv.due_date,
+                terms: inv.terms || '30 Days',
+                subject: inv.subject || '',
+                status: inv.payment_status || 'unpaid', // Database uses payment_status
+                pricing_mode: 'standard', // default
+                milestone_description: '',
+                milestone_amount: 0,
+                subtotal: inv.subtotal,
+                discount: inv.discount, // amount
+                tax: inv.tax || 0, // Database column is 'tax'
+                notes: inv.notes || ''
+            });
 
-            if (invoice) {
-                setFormData({
-                    customer_id: invoice.customer_id,
-                    date: invoice.date,
-                    due_date: invoice.due_date,
-                    notes: invoice.notes || '',
-                    discount: invoice.discount,
-                    tax: invoice.tax,
-                });
-
-                // Load invoice items
-                const { data: invoiceItems, error: itemsError } = await supabase
-                    .from('invoice_items')
-                    .select('*')
-                    .eq('invoice_id', invoiceId);
-
-                if (itemsError) throw itemsError;
-
-                if (invoiceItems && invoiceItems.length > 0) {
-                    const loadedItems = invoiceItems.map((item, index) => {
-                        // Try to find matching item by name to populate item_id
-                        const matchingItem = items.find(i => i.name === item.item_name);
-
-                        console.log('Loading invoice item:', {
-                            item_name: item.item_name,
-                            matchingItem: matchingItem,
-                            item_id_from_db: item.item_id,
-                            final_item_id: matchingItem?.id || item.item_id || ''
-                        });
-
-                        return {
-                            id: `loaded-${index}`,
-                            item_id: matchingItem?.id || item.item_id || '', // Prioritize matched item
-                            item_name: item.item_name,
-                            description: item.description || '',
-                            quantity: item.quantity,
-                            unit_price: item.unit_price,
-                            discount: item.discount,
-                            tax_rate: item.tax_rate,
-                            total: item.total,
-                        };
-                    });
-                    console.log('Setting line items:', loadedItems);
-                    setLineItems(loadedItems);
-                }
+            // Load Items
+            const { data: items } = await supabase.from('invoice_items').select('*').eq('invoice_id', invoiceId);
+            if (items) {
+                setLineItems(items.map((i) => ({
+                    id: i.id,
+                    item_code: i.item_code || '',
+                    item_id: '',
+                    description: i.description,
+                    quantity: i.quantity,
+                    uom: i.uom || 'EA',
+                    unit_price: i.unit_price,
+                    total_price: i.total_price  // DB column name
+                })));
             }
-        } catch (error: any) {
-            console.error('Error loading invoice:', error);
-            showToast('Failed to load invoice', 'error');
-            navigate('/invoices');
+
+            // Fetch SOs for customer
+            if (inv.customer_id) fetchSalesOrders(inv.customer_id);
+
+        } catch (error) {
+            console.error(error);
         } finally {
             setLoading(false);
         }
     };
 
-    const addLineItem = () => {
-        setLineItems([
-            ...lineItems,
-            {
-                id: Date.now().toString(),
+    const handleLineItemChange = (itemId: string, field: keyof InvoiceLineItem, value: any) => {
+        setLineItems(lineItems.map(i => {
+            if (i.id !== itemId) return i;
+            const updated = { ...i, [field]: value };
+            // Recalculate total_price when quantity or unit_price changes
+            if (field === 'quantity' || field === 'unit_price') {
+                updated.total_price = updated.quantity * updated.unit_price;
+            }
+            return updated;
+        }));
+    };
+
+    const getCalculatedValues = () => {
+        const subtotal = lineItems.reduce((acc, i) => acc + (i.quantity * i.unit_price), 0);
+        const discountVal = formData.discount; // assume amount
+        const taxable = subtotal - discountVal;
+        const taxVal = taxable * (formData.tax / 100);
+        const total = taxable + taxVal;
+        return { subtotal, discountVal, taxVal, total };
+    };
+
+    const handleMilestoneGenerate = (field: 'desc' | 'amt', value: string) => {
+        setFormData({ ...formData, [field === 'desc' ? 'milestone_description' : 'milestone_amount']: value });
+
+        if (field === 'desc' && value || field === 'amt' && parseFloat(value) > 0) {
+            setLineItems([{
+                id: 'milestone-1',
+                item_code: '',
                 item_id: '',
-                item_name: '',
-                description: '',
+                description: field === 'desc' ? value : formData.milestone_description,
                 quantity: 1,
-                unit_price: 0,
-                discount: 0,
-                tax_rate: 0,
-                total: 0,
-            },
-        ]);
-    };
-
-    const removeLineItem = (id: string) => {
-        if (lineItems.length > 1) {
-            setLineItems(lineItems.filter((item) => item.id !== id));
+                uom: 'LS',
+                unit_price: field === 'amt' ? parseFloat(value) || 0 : formData.milestone_amount,
+                total_price: field === 'amt' ? parseFloat(value) || 0 : formData.milestone_amount
+            }]);
         }
-    };
-
-    const updateLineItem = (id: string, field: keyof LineItem, value: any) => {
-        setLineItems(
-            lineItems.map((item) => {
-                if (item.id === id) {
-                    const updated = { ...item, [field]: value };
-
-                    // If item_id changed, auto-fill name and price
-                    if (field === 'item_id' && value) {
-                        const selectedItem = items.find((i) => i.id === value);
-                        if (selectedItem) {
-                            updated.item_name = selectedItem.name;
-                            updated.description = selectedItem.description || '';
-                            updated.unit_price = selectedItem.price;
-                        }
-                    }
-
-                    // Calculate line total
-                    const subtotal = updated.quantity * updated.unit_price;
-                    const discountAmount = subtotal * (updated.discount / 100);
-                    const taxAmount = (subtotal - discountAmount) * (updated.tax_rate / 100);
-                    updated.total = subtotal - discountAmount + taxAmount;
-                    return updated;
-                }
-                return item;
-            })
-        );
-    };
-
-    const calculateTotals = () => {
-        // Subtotal is now the sum of row totals (which already include row-level discounts + taxes)
-        const subtotal = lineItems.reduce((sum, item) => sum + item.total, 0);
-        // Global discount and tax still apply on top
-        const discountAmount = subtotal * (formData.discount / 100);
-        const taxAmount = (subtotal - discountAmount) * (formData.tax / 100);
-        const total = subtotal - discountAmount + taxAmount;
-        return { subtotal, discountAmount, taxAmount, total };
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!user || !formData.customer_id) return;
-
         setLoading(true);
         try {
-            const totals = calculateTotals();
+            const vals = getCalculatedValues();
+
+            // Header
+            const invData = {
+                customer_id: formData.customer_id,
+                so_id: formData.so_id || null,
+                // Map pricing_mode to billing_type: 'standard' → 'itemized', 'milestone' → 'milestone'
+                billing_type: formData.pricing_mode === 'standard' ? 'itemized' : 'milestone',
+                invoice_number: formData.invoice_number || `INV-${Date.now()}`,
+                date: formData.date,
+                due_date: formData.due_date,
+                terms: formData.terms,
+                subject: formData.subject,
+                payment_status: formData.status, // Database uses payment_status not status
+
+                subtotal: vals.subtotal,
+                discount: vals.discountVal,
+                tax: vals.taxVal, // Database column is 'tax', not 'tax_rate' or 'tax_amount'
+                grand_total: vals.total,
+            };
+
+            let invId = id;
 
             if (isEditMode && id) {
-                // Update existing invoice
-                const { error: invoiceError } = await supabase
-                    .from('invoices')
-                    .update({
-                        customer_id: formData.customer_id,
-                        date: formData.date,
-                        due_date: formData.due_date,
-                        subtotal: totals.subtotal,
-                        discount: formData.discount,
-                        tax: formData.tax,
-                        total: totals.total,
-                        notes: formData.notes,
-                    })
-                    .eq('id', id);
-
-                if (invoiceError) throw invoiceError;
-
-                // Delete existing items
+                const { error } = await supabase.from('invoices').update(invData).eq('id', id);
+                if (error) throw error;
                 await supabase.from('invoice_items').delete().eq('invoice_id', id);
-
-                // Insert updated items (item_id is not stored in DB, only used for dropdown selection)
-                const itemsToInsert = lineItems.map((item) => ({
-                    invoice_id: id,
-                    item_name: item.item_name,
-                    description: item.description,
-                    quantity: item.quantity,
-                    unit_price: item.unit_price,
-                    discount: item.discount,
-                    tax_rate: item.tax_rate,
-                    total: item.total,
-                }));
-
-                const { error: itemsError } = await supabase.from('invoice_items').insert(itemsToInsert);
-
-                if (itemsError) throw itemsError;
-
-                showToast('Invoice updated successfully!', 'success');
             } else {
-                // Create invoice
-                const { data: invoice, error: invoiceError } = await supabase
-                    .from('invoices')
-                    .insert([
-                        {
-                            invoice_number: 'INV-' + Date.now(),
-                            customer_id: formData.customer_id,
-                            date: formData.date,
-                            due_date: formData.due_date,
-                            subtotal: totals.subtotal,
-                            discount: formData.discount,
-                            tax: formData.tax,
-                            total: totals.total,
-                            notes: formData.notes,
-                            status: 'unpaid',
-                        },
-                    ])
-                    .select()
-                    .single();
-
-                if (invoiceError) throw invoiceError;
-
-                // Create invoice items (item_id is not stored in DB, only used for dropdown selection)
-                const itemsToInsert = lineItems.map((item) => ({
-                    invoice_id: invoice.id,
-                    item_name: item.item_name,
-                    description: item.description,
-                    quantity: item.quantity,
-                    unit_price: item.unit_price,
-                    discount: item.discount,
-                    tax_rate: item.tax_rate,
-                    total: item.total,
-                }));
-
-                const { error: itemsError } = await supabase.from('invoice_items').insert(itemsToInsert);
-
-                if (itemsError) throw itemsError;
-
-                showToast('Invoice created successfully!', 'success');
+                const { data, error } = await supabase.from('invoices').insert([invData]).select().single();
+                if (error) throw error;
+                invId = data.id;
             }
 
+            if (invId) {
+                const itemsToInsert = lineItems.map(i => ({
+                    invoice_id: invId,
+                    item_code: i.item_code || null,
+                    description: i.description,
+                    quantity: i.quantity,
+                    uom: i.uom,
+                    unit_price: i.unit_price,
+                    total_price: i.total_price  // Match DB column
+                }));
+                const { error } = await supabase.from('invoice_items').insert(itemsToInsert);
+                if (error) throw error;
+            }
+
+            showToast('Invoice saved', 'success');
             navigate('/invoices');
+
         } catch (error: any) {
-            console.error('Error saving invoice:', error);
-            showToast(error.message || 'Failed to save invoice', 'error');
+            console.error(error);
+            showToast(error.message, 'error');
         } finally {
             setLoading(false);
         }
     };
 
-    const totals = calculateTotals();
+    const vals = getCalculatedValues();
 
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <Button variant="secondary" onClick={() => navigate('/invoices')}>
+                    <Button variant="secondary" onClick={() => navigate(-1)}>
                         <ArrowLeft className="w-4 h-4" />
                         Back
                     </Button>
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-900">{isEditMode ? 'Edit' : 'Create'} Invoice</h1>
-                        <p className="text-gray-600 mt-1">{isEditMode ? 'Update' : 'Add'} invoice details and line items</p>
-                    </div>
+                    <h1 className="text-3xl font-bold text-gray-900">{isEditMode ? 'Edit' : 'Create'} Invoice</h1>
                 </div>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
                 <Card>
-                    <h2 className="text-xl font-semibold mb-4">Invoice Information</h2>
+                    <h2 className="text-xl font-semibold mb-4">Invoice Details</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Customer *</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
                             <select
                                 value={formData.customer_id}
-                                onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
+                                onChange={(e) => handleCustomerChange(e.target.value)}
                                 className="input w-full bg-white"
                                 required
                             >
-                                <option value="">Select Customer</option>
-                                {customers.map((customer) => (
-                                    <option key={customer.id} value={customer.id}>
-                                        {customer.name}
-                                    </option>
+                                <option value="">Select Customer...</option>
+                                {customers.map(c => (
+                                    <option key={c.id} value={c.id}>{c.company_name}</option>
                                 ))}
                             </select>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Date *</label>
-                            <input
-                                type="date"
-                                value={formData.date}
-                                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Linked Sales Order (Optional)</label>
+                            <select
+                                value={formData.so_id}
+                                onChange={(e) => handleSOSelection(e.target.value)}
                                 className="input w-full bg-white"
-                                required
-                            />
+                            >
+                                <option value="">Select SO...</option>
+                                {salesOrders.map(so => (
+                                    <option key={so.id} value={so.id}>{so.so_number} - {so.quotations?.subject}</option>
+                                ))}
+                            </select>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Due Date *</label>
-                            <input
-                                type="date"
-                                value={formData.due_date}
-                                onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-                                className="input w-full bg-white"
-                                required
-                            />
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                            <input type="date" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} className="input w-full bg-white" required />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                            <input
-                                type="text"
-                                value={formData.notes}
-                                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                                className="input w-full bg-white"
-                                placeholder="Optional notes"
-                            />
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
+                            <input type="date" value={formData.due_date} onChange={e => setFormData({ ...formData, due_date: e.target.value })} className="input w-full bg-white" required />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Terms</label>
+                            <input type="text" value={formData.terms} onChange={e => setFormData({ ...formData, terms: e.target.value })} className="input w-full bg-white" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+                            <input type="text" value={formData.subject} onChange={e => setFormData({ ...formData, subject: e.target.value })} className="input w-full bg-white" />
                         </div>
                     </div>
                 </Card>
 
                 <Card>
                     <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-xl font-semibold">Line Items</h2>
-                        <Button type="button" onClick={addLineItem} variant="secondary">
-                            <Plus className="w-4 h-4" />
-                            Add Item
-                        </Button>
+                        <h2 className="text-xl font-semibold">Billing Logic</h2>
+                        <div className="flex gap-4">
+                            <label className="flex items-center gap-2">
+                                <input
+                                    type="radio"
+                                    name="pricing_mode"
+                                    value="standard"
+                                    checked={formData.pricing_mode === 'standard'}
+                                    onChange={() => setFormData({ ...formData, pricing_mode: 'standard' })}
+                                />
+                                Standard (Itemized)
+                            </label>
+                            <label className="flex items-center gap-2">
+                                <input
+                                    type="radio"
+                                    name="pricing_mode"
+                                    value="milestone"
+                                    checked={formData.pricing_mode === 'milestone'}
+                                    onChange={() => setFormData({ ...formData, pricing_mode: 'milestone' })}
+                                />
+                                Progressive (Milestone)
+                            </label>
+                        </div>
                     </div>
 
-                    <div className="overflow-x-auto">
-                        <table className="table">
-                            <thead>
-                                <tr>
-                                    <th>Item Name</th>
-                                    <th>Description</th>
-                                    <th>Qty</th>
-                                    <th>Unit Price</th>
-                                    <th>Discount %</th>
-                                    <th>Tax %</th>
-                                    <th>Total</th>
-                                    <th>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {lineItems.map((item) => (
-                                    <tr key={item.id}>
+                    {formData.pricing_mode === 'milestone' && (
+                        <div className="mb-6 p-4 bg-yellow-50 rounded border border-yellow-200">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Milestone Description</label>
+                                    <input
+                                        type="text"
+                                        value={formData.milestone_description}
+                                        onChange={e => handleMilestoneGenerate('desc', e.target.value)}
+                                        placeholder="e.g. Down Payment 30%"
+                                        className="input w-full"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Amount to Bill</label>
+                                    <input
+                                        type="number"
+                                        value={formData.milestone_amount}
+                                        onChange={e => handleMilestoneGenerate('amt', e.target.value)}
+                                        className="input w-full"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {formData.pricing_mode === 'standard' && (
+                        <div className="mb-4">
+                            <Button type="button" onClick={() => setLineItems([...lineItems, { id: Date.now().toString(), item_code: '', item_id: '', description: '', quantity: 1, uom: 'EA', unit_price: 0, total_price: 0 }])} variant="secondary">
+                                <Plus className="w-4 h-4" /> Add Item
+                            </Button>
+                        </div>
+                    )}
+
+                    <table className="table w-full">
+                        <thead>
+                            <tr>
+                                <th>Ref/Code</th>
+                                <th>Description</th>
+                                <th className="w-20">Qty</th>
+                                <th className="w-20">UOM</th>
+                                <th className="w-32">Price</th>
+                                <th className="w-24">Total</th>
+                                {formData.pricing_mode === 'standard' && <th className="w-10"></th>}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {lineItems.map((item) => (
+                                <tr key={item.id} className={formData.pricing_mode === 'milestone' ? 'bg-gray-50' : ''}>
+                                    <td>
+                                        <input
+                                            type="text"
+                                            value={item.item_code}
+                                            onChange={e => handleLineItemChange(item.id, 'item_code', e.target.value)}
+                                            className="input w-full"
+                                            readOnly={formData.pricing_mode === 'milestone'}
+                                        />
+                                    </td>
+                                    <td>
+                                        <input
+                                            type="text"
+                                            value={item.description}
+                                            onChange={e => handleLineItemChange(item.id, 'description', e.target.value)}
+                                            className="input w-full"
+                                            readOnly={formData.pricing_mode === 'milestone'}
+                                        />
+                                    </td>
+                                    <td>
+                                        <input
+                                            type="number"
+                                            value={item.quantity}
+                                            onChange={e => handleLineItemChange(item.id, 'quantity', parseFloat(e.target.value))}
+                                            className="input w-full"
+                                            readOnly={formData.pricing_mode === 'milestone'}
+                                        />
+                                    </td>
+                                    <td>
+                                        <input
+                                            type="text"
+                                            value={item.uom}
+                                            onChange={e => handleLineItemChange(item.id, 'uom', e.target.value)}
+                                            className="input w-full"
+                                            readOnly={formData.pricing_mode === 'milestone'}
+                                        />
+                                    </td>
+                                    <td>
+                                        <input
+                                            type="number"
+                                            value={item.unit_price}
+                                            onChange={e => handleLineItemChange(item.id, 'unit_price', parseFloat(e.target.value))}
+                                            className="input w-full"
+                                            readOnly={formData.pricing_mode === 'milestone'}
+                                        />
+                                    </td>
+                                    <td>
+                                        <span className="font-bold">{item.quantity * item.unit_price}</span>
+                                    </td>
+                                    {formData.pricing_mode === 'standard' && (
                                         <td>
-                                            <select
-                                                value={item.item_id}
-                                                onChange={(e) => updateLineItem(item.id, 'item_id', e.target.value)}
-                                                className="input w-full min-w-[180px] bg-white"
-                                                required
-                                            >
-                                                <option value="">Select Item</option>
-                                                {items.map((inventoryItem) => (
-                                                    <option key={inventoryItem.id} value={inventoryItem.id}>
-                                                        {inventoryItem.name} - ${inventoryItem.price.toFixed(2)}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="text"
-                                                value={item.description}
-                                                onChange={(e) => updateLineItem(item.id, 'description', e.target.value)}
-                                                className="input w-full min-w-[150px] bg-white"
-                                                placeholder="Description"
-                                            />
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="number"
-                                                value={item.quantity}
-                                                onChange={(e) => updateLineItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                                                className="input w-20 bg-white"
-                                                min="1"
-                                                required
-                                            />
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="number"
-                                                value={item.unit_price}
-                                                onChange={(e) => updateLineItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                                                className="input w-28 bg-white"
-                                                step="0.01"
-                                                min="0"
-                                                required
-                                            />
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="number"
-                                                value={item.discount}
-                                                onChange={(e) => updateLineItem(item.id, 'discount', parseFloat(e.target.value) || 0)}
-                                                className="input w-20 bg-white"
-                                                step="0.01"
-                                                min="0"
-                                                max="100"
-                                            />
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="number"
-                                                value={item.tax_rate}
-                                                onChange={(e) => updateLineItem(item.id, 'tax_rate', parseFloat(e.target.value) || 0)}
-                                                className="input w-20 bg-white"
-                                                step="0.01"
-                                                min="0"
-                                                max="100"
-                                            />
-                                        </td>
-                                        <td className="font-semibold">${item.total.toFixed(2)}</td>
-                                        <td>
-                                            <button
-                                                type="button"
-                                                onClick={() => removeLineItem(item.id)}
-                                                className="text-red-600 hover:text-red-800"
-                                                disabled={lineItems.length === 1}
-                                            >
+                                            <button type="button" onClick={() => setLineItems(lineItems.filter(i => i.id !== item.id))} className="text-red-500">
                                                 <Trash2 className="w-4 h-4" />
                                             </button>
                                         </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+                                    )}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </Card>
 
                 <Card>
-                    <h2 className="text-xl font-semibold mb-4">Totals</h2>
-                    <div className="space-y-4 max-w-md ml-auto">
-                        <div className="flex justify-between items-center">
-                            <span className="text-gray-600">Subtotal:</span>
-                            <span className="font-semibold text-lg">${totals.subtotal.toFixed(2)}</span>
+                    <div className="flex flex-col items-end gap-2">
+                        <div className="flex justify-between w-64">
+                            <span>Subtotal:</span>
+                            <span className="font-bold">{vals.subtotal.toFixed(2)}</span>
                         </div>
-                        <div className="flex justify-between items-center gap-4">
-                            <label className="text-gray-600">Discount (%):</label>
-                            <input
-                                type="number"
-                                value={formData.discount}
-                                onChange={(e) => setFormData({ ...formData, discount: parseFloat(e.target.value) || 0 })}
-                                className="input w-24 bg-white"
-                                step="0.01"
-                                min="0"
-                                max="100"
-                            />
-                            <span className="font-semibold w-24 text-right">-${totals.discountAmount.toFixed(2)}</span>
+                        <div className="flex justify-between w-64 items-center">
+                            <span>Global Discount:</span>
+                            <input type="number" value={formData.discount} onChange={e => setFormData({ ...formData, discount: parseFloat(e.target.value) })} className="input w-24 text-right" />
                         </div>
-                        <div className="flex justify-between items-center gap-4">
-                            <label className="text-gray-600">Tax (%):</label>
-                            <input
-                                type="number"
-                                value={formData.tax}
-                                onChange={(e) => setFormData({ ...formData, tax: parseFloat(e.target.value) || 0 })}
-                                className="input w-24 bg-white"
-                                step="0.01"
-                                min="0"
-                                max="100"
-                            />
-                            <span className="font-semibold w-24 text-right">+${totals.taxAmount.toFixed(2)}</span>
+                        <div className="flex justify-between w-64 items-center">
+                            <span>GST (%):</span>
+                            <input type="number" value={formData.tax} onChange={e => setFormData({ ...formData, tax: parseFloat(e.target.value) })} className="input w-24 text-right" />
                         </div>
-                        <div className="border-t pt-4 flex justify-between items-center">
+                        <div className="flex justify-between w-64 border-t pt-2">
                             <span className="text-xl font-bold">Total:</span>
-                            <span className="text-2xl font-bold text-blue-600">${totals.total.toFixed(2)}</span>
+                            <span className="text-xl font-bold">{vals.total.toFixed(2)}</span>
                         </div>
                     </div>
                 </Card>
@@ -525,8 +663,8 @@ export const InvoiceForm = () => {
                     <Button type="button" variant="secondary" onClick={() => navigate('/invoices')}>
                         Cancel
                     </Button>
-                    <Button type="submit" disabled={loading || !formData.customer_id}>
-                        {loading ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Invoice' : 'Create Invoice')}
+                    <Button type="submit" disabled={loading}>
+                        {loading ? 'Saving...' : 'Save Invoice'}
                     </Button>
                 </div>
             </form>

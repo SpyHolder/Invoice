@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useReactToPrint } from 'react-to-print';
 import { ArrowLeft, Printer } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { supabase, Invoice, InvoiceItem, Customer } from '../lib/supabase';
+import { supabase, Invoice, InvoiceItem, Partner, Company, BankAccount } from '../lib/supabase';
 import { InvoiceTemplate } from '../components/InvoiceTemplate';
 
 export const ViewInvoice = () => {
@@ -12,8 +12,10 @@ export const ViewInvoice = () => {
     const printRef = useRef<HTMLDivElement>(null);
 
     const [invoice, setInvoice] = useState<Invoice | null>(null);
-    const [customer, setCustomer] = useState<Customer | null>(null);
+    const [customer, setCustomer] = useState<Partner | null>(null);
     const [items, setItems] = useState<InvoiceItem[]>([]);
+    const [company, setCompany] = useState<Company | undefined>(undefined);
+    const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [loading, setLoading] = useState(true);
 
     const handlePrint = useReactToPrint({
@@ -40,9 +42,9 @@ export const ViewInvoice = () => {
             if (invoiceError) throw invoiceError;
             setInvoice(invoiceData);
 
-            // Fetch customer
+            // Fetch customer (partner)
             const { data: customerData, error: customerError } = await supabase
-                .from('customers')
+                .from('partners')
                 .select('*')
                 .eq('id', invoiceData.customer_id)
                 .single();
@@ -54,14 +56,38 @@ export const ViewInvoice = () => {
             const { data: itemsData, error: itemsError } = await supabase
                 .from('invoice_items')
                 .select('*')
-                .eq('invoice_id', id)
-                .order('id');
+                .eq('invoice_id', id);
 
             if (itemsError) throw itemsError;
             setItems(itemsData || []);
+
+            // Fetch Company Info (Assuming single company for now)
+            const { data: companyData, error: companyError } = await supabase
+                .from('companies')
+                .select('*')
+                .limit(1)
+                .single();
+
+            // It's possible company doesn't exist yet, so don't throw hard error, just log
+            if (companyError && companyError.code !== 'PGRST116') {
+                console.error('Error fetching company:', companyError);
+            }
+            if (companyData) {
+                setCompany(companyData);
+
+                // Fetch Bank Accounts for this company
+                const { data: bankData, error: bankError } = await supabase
+                    .from('bank_accounts')
+                    .select('*')
+                    .eq('company_id', companyData.id);
+
+                if (bankError) console.error('Error fetching bank accounts:', bankError);
+                setBankAccounts(bankData || []);
+            }
+
         } catch (error) {
-            console.error('Error fetching invoice:', error);
-            alert('Failed to load invoice');
+            console.error('Error fetching invoice details:', error);
+            alert('Failed to load invoice details');
         } finally {
             setLoading(false);
         }
@@ -103,8 +129,17 @@ export const ViewInvoice = () => {
                 </Button>
             </div>
 
-            <div className="bg-white rounded-lg shadow-lg">
-                <InvoiceTemplate ref={printRef} invoice={invoice} customer={customer} items={items} />
+            <div className="bg-gray-100 p-4 rounded-lg overflow-auto">
+                <div className="origin-top scale-90">
+                    <InvoiceTemplate
+                        ref={printRef}
+                        invoice={invoice}
+                        customer={customer}
+                        items={items}
+                        company={company}
+                        bankAccounts={bankAccounts}
+                    />
+                </div>
             </div>
         </div>
     );

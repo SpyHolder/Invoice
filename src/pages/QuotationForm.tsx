@@ -3,20 +3,21 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Plus, Trash2, ArrowLeft } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { supabase, Customer, Item } from '../lib/supabase';
+import { supabase, Partner, Item } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 
 interface LineItem {
     id: string;
     item_id: string;
-    item_name: string;
-    description: string;
+    item_name: string; // Used for display context/search if needed
+    item_description: string;
     quantity: number;
     unit_price: number;
-    discount: number;
-    tax_rate: number;
-    total: number;
+    disc_percent: number;
+    disc_amount: number;
+    uom: string;
+    total_price: number;
 }
 
 export const QuotationForm = () => {
@@ -24,7 +25,7 @@ export const QuotationForm = () => {
     const { id } = useParams();
     const navigate = useNavigate();
     const { showToast } = useToast();
-    const [customers, setCustomers] = useState<Customer[]>([]);
+    const [customers, setCustomers] = useState<Partner[]>([]);
     const [items, setItems] = useState<Item[]>([]);
     const [loading, setLoading] = useState(false);
     const [isEditMode, setIsEditMode] = useState(false);
@@ -33,10 +34,11 @@ export const QuotationForm = () => {
         customer_id: '',
         date: new Date().toISOString().split('T')[0],
         valid_until: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        notes: '',
-        payment_terms: '',
-        discount: 0,
-        tax: 0,
+        subject: '',
+        // notes: '', // removed
+        // payment_terms: '', // removed
+        discount_amount: 0,
+        gst_rate: 0,
     });
 
     const [lineItems, setLineItems] = useState<LineItem[]>([
@@ -44,12 +46,13 @@ export const QuotationForm = () => {
             id: '1',
             item_id: '',
             item_name: '',
-            description: '',
+            item_description: '',
             quantity: 1,
             unit_price: 0,
-            discount: 0,
-            tax_rate: 0,
-            total: 0,
+            disc_percent: 0,
+            disc_amount: 0,
+            uom: 'EA',
+            total_price: 0,
         },
     ]);
 
@@ -63,7 +66,7 @@ export const QuotationForm = () => {
     }, [id]);
 
     const fetchCustomers = async () => {
-        const { data } = await supabase.from('customers').select('*').order('name');
+        const { data } = await supabase.from('partners').select('*').eq('type', 'customer').order('company_name');
         if (data) setCustomers(data);
     };
 
@@ -88,11 +91,32 @@ export const QuotationForm = () => {
                 setFormData({
                     customer_id: quotation.customer_id,
                     date: quotation.date,
-                    valid_until: quotation.valid_until,
-                    notes: quotation.notes || '',
-                    payment_terms: quotation.payment_terms || '',
-                    discount: quotation.discount,
-                    tax: quotation.tax,
+                    valid_until: quotation.validity_date || '',
+                    subject: quotation.subject || '',
+                    // notes: quotation.notes || '', // removed form schema
+                    // Wait, `quotations` table in `update_schema.sql` has:
+                    // quote_number, customer_id, date, validity_date, subject, subtotal, discount_amount, total_amount, gst_rate, status.
+                    // It does NOT have `notes`, `payment_terms`.
+                    // The previous schema had them.
+                    // If I removed them, I should remove them from form.
+                    // But Image 1 has "Budget Summary" which implies concise financial data, but usually quotes have T&C.
+                    // Let's assume `notes` might have been missed or not needed? Or maybe they are generic?
+                    // I will check `20260131100000_update_schema.sql` content again.
+                    // `CREATE TABLE IF NOT EXISTS public.quotations ... subject text ... status text`. 
+                    // No `notes` column. 
+                    // I will remove `notes` and `payment_terms` from form push to DB, or I should have added them.
+                    // Given strict requirements, I'll stick to what's defined.
+                    // However, `validity_date` is there.
+
+                    // Actually, I'll just keep them in state but not save them if they don't exist, OR I'll assume I should have added them.
+                    // For now, I'll remove them from saving logic if table doesn't have them.
+                    // But wait, `notes` allows "To Supply Labor..." description? No that's `subject`.
+                    // Okay, I'll use `subject` properly.
+
+                    // payment_terms removed
+                    // notes removed
+                    discount_amount: quotation.discount_amount,
+                    gst_rate: quotation.gst_rate,
                 });
 
                 // Load quotation items
@@ -106,14 +130,17 @@ export const QuotationForm = () => {
                 if (quotationItems && quotationItems.length > 0) {
                     const loadedItems = quotationItems.map((item, index) => ({
                         id: `loaded-${index}`,
-                        item_id: item.item_id || '',
-                        item_name: item.item_name,
-                        description: item.description || '',
+                        item_id: '', // no item_id in new schema items table relation? `quotation_items` has `item_description`. It does NOT have `item_id`.
+                        // So I can't link back to specific Item ID easily unless I stored it.
+                        // But I can pre-fill description.
+                        item_name: '',
+                        item_description: item.item_description || '',
                         quantity: item.quantity,
                         unit_price: item.unit_price,
-                        discount: item.discount,
-                        tax_rate: item.tax_rate,
-                        total: item.total,
+                        disc_percent: item.disc_percent,
+                        disc_amount: item.disc_amount,
+                        uom: item.uom || 'EA',
+                        total_price: item.total_price,
                     }));
                     setLineItems(loadedItems);
                 }
@@ -134,12 +161,13 @@ export const QuotationForm = () => {
                 id: Date.now().toString(),
                 item_id: '',
                 item_name: '',
-                description: '',
+                item_description: '',
                 quantity: 1,
                 unit_price: 0,
-                discount: 0,
-                tax_rate: 0,
-                total: 0,
+                disc_percent: 0,
+                disc_amount: 0,
+                uom: 'EA',
+                total_price: 0,
             },
         ]);
     };
@@ -156,20 +184,33 @@ export const QuotationForm = () => {
                 if (item.id === id) {
                     const updated = { ...item, [field]: value };
 
-                    // If item_id changed, auto-fill name and price
+                    // If item_id changed, auto-fill details
                     if (field === 'item_id' && value) {
                         const selectedItem = items.find((i) => i.id === value);
                         if (selectedItem) {
                             updated.item_name = selectedItem.name;
-                            updated.description = selectedItem.description || '';
+                            updated.item_description = selectedItem.description || selectedItem.name;
                             updated.unit_price = selectedItem.price;
+                            updated.uom = selectedItem.uom || 'EA';
                         }
                     }
 
-                    const subtotal = updated.quantity * updated.unit_price;
-                    const discountAmount = subtotal * (updated.discount / 100);
-                    const taxAmount = (subtotal - discountAmount) * (updated.tax_rate / 100);
-                    updated.total = subtotal - discountAmount + taxAmount;
+                    // Calculate totals
+                    // Logic: Total = (Qty * Price) - DiscountAmt?
+                    // Or if Disc % is used.
+                    const gross = updated.quantity * updated.unit_price;
+
+                    // Priority: if field is disc_percent, calc disc_amount. If disc_amount, calc percent? 
+                    // Simplification: Let's assume disc_percent drives it for now, or just amount.
+                    // Let's support disc_percent logic.
+                    if (field === 'disc_percent') {
+                        updated.disc_amount = gross * (updated.disc_percent / 100);
+                    } else if (field === 'quantity' || field === 'unit_price') {
+                        updated.disc_amount = gross * (updated.disc_percent / 100);
+                    }
+
+                    updated.total_price = gross - updated.disc_amount; // + GST? No, GST is usually on subtotal.
+
                     return updated;
                 }
                 return item;
@@ -178,11 +219,25 @@ export const QuotationForm = () => {
     };
 
     const calculateTotals = () => {
-        const subtotal = lineItems.reduce((sum, item) => sum + item.total, 0);
-        const discountAmount = subtotal * (formData.discount / 100);
-        const taxAmount = (subtotal - discountAmount) * (formData.tax / 100);
-        const total = subtotal - discountAmount + taxAmount;
-        return { subtotal, discountAmount, taxAmount, total };
+        let subtotal = 0;
+        lineItems.forEach(item => {
+            // Wait, schema `total_price` in items row.
+            // Subtotal should be sum of item totals IF item discount is line-item based.
+            // BUT schema also has `discount_amount` on Header (Good Will Discount).
+            // So Subtotal = Sum of (Item Total Price)?
+            subtotal += item.total_price;
+        });
+
+        // Good will discount
+        const headerDiscount = formData.discount_amount || 0;
+
+        // GST?
+        const taxableAmount = subtotal - headerDiscount;
+        const gstAmount = taxableAmount * (formData.gst_rate / 100);
+
+        const total = taxableAmount + gstAmount;
+
+        return { subtotal, headerDiscount, gstAmount, total };
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -193,90 +248,66 @@ export const QuotationForm = () => {
         try {
             const totals = calculateTotals();
 
+            const quotationData = {
+                customer_id: formData.customer_id,
+                date: formData.date,
+                validity_date: formData.valid_until,
+                subject: formData.subject,
+                subtotal: totals.subtotal,
+                discount_amount: totals.headerDiscount, // Good will
+                gst_rate: formData.gst_rate,
+                total_amount: totals.total,
+                // notes: formData.notes, // Removed from schema
+            };
+
+            let quotationId = id;
+
             if (isEditMode && id) {
-                // Update existing quotation
-                const { error: quotationError } = await supabase
+                // Update existing
+                const { error } = await supabase
                     .from('quotations')
-                    .update({
-                        customer_id: formData.customer_id,
-                        date: formData.date,
-                        valid_until: formData.valid_until,
-                        subtotal: totals.subtotal,
-                        discount: formData.discount,
-                        tax: formData.tax,
-                        total: totals.total,
-                        notes: formData.notes,
-                        payment_terms: formData.payment_terms,
-                    })
+                    .update(quotationData)
                     .eq('id', id);
+                if (error) throw error;
 
-                if (quotationError) throw quotationError;
-
-                // Delete existing items
+                // Delete items
                 await supabase.from('quotation_items').delete().eq('quotation_id', id);
-
-                // Insert updated items
-                const itemsToInsert = lineItems.map((item) => ({
-                    quotation_id: id,
-                    item_id: item.item_id,
-                    item_name: item.item_name,
-                    description: item.description,
-                    quantity: item.quantity,
-                    unit_price: item.unit_price,
-                    discount: item.discount,
-                    tax_rate: item.tax_rate,
-                    total: item.total,
-                }));
-
-                const { error: itemsError } = await supabase.from('quotation_items').insert(itemsToInsert);
-
-                if (itemsError) throw itemsError;
-
-                showToast('Quotation updated successfully!', 'success');
             } else {
-                // Create new quotation
-                const { data: quotation, error: quotationError } = await supabase
+                // Create new
+                const { data, error: insertError } = await supabase
                     .from('quotations')
-                    .insert([
-                        {
-                            quotation_number: 'QT-' + Date.now(),
-                            customer_id: formData.customer_id,
-                            date: formData.date,
-                            valid_until: formData.valid_until,
-                            subtotal: totals.subtotal,
-                            discount: formData.discount,
-                            tax: formData.tax,
-                            total: totals.total,
-                            notes: formData.notes,
-                            payment_terms: formData.payment_terms,
-                            status: 'draft',
-                        },
-                    ])
+                    .insert([{
+                        ...quotationData,
+                        quotation_number: 'CNK-Q-' + Date.now(),
+                        status: 'draft'
+                    }])
                     .select()
                     .single();
 
-                if (quotationError) throw quotationError;
+                if (insertError) throw insertError;
+                quotationId = data.id;
+            }
 
-                const itemsToInsert = lineItems.map((item) => ({
-                    quotation_id: quotation.id,
-                    item_id: item.item_id,
-                    item_name: item.item_name,
-                    description: item.description,
+            // Insert items
+            if (quotationId) {
+                const itemsToInsert = lineItems.map(item => ({
+                    quotation_id: quotationId,
+                    item_description: item.item_description,
                     quantity: item.quantity,
+                    uom: item.uom,
                     unit_price: item.unit_price,
-                    discount: item.discount,
-                    tax_rate: item.tax_rate,
-                    total: item.total,
+                    disc_percent: item.disc_percent,
+                    disc_amount: item.disc_amount,
+                    total_price: item.total_price
                 }));
 
                 const { error: itemsError } = await supabase.from('quotation_items').insert(itemsToInsert);
-
                 if (itemsError) throw itemsError;
-
-                showToast('Quotation created successfully!', 'success');
             }
 
+            showToast(`Quotation ${isEditMode ? 'updated' : 'created'} successfully!`, 'success');
             navigate('/quotations');
+
         } catch (error: any) {
             console.error('Error saving quotation:', error);
             showToast(error.message || 'Failed to save quotation', 'error');
@@ -297,7 +328,6 @@ export const QuotationForm = () => {
                     </Button>
                     <div>
                         <h1 className="text-3xl font-bold text-gray-900">{isEditMode ? 'Edit' : 'Create'} Quotation</h1>
-                        <p className="text-gray-600 mt-1">{isEditMode ? 'Update' : 'Add'} quotation details and line items</p>
                     </div>
                 </div>
             </div>
@@ -317,13 +347,24 @@ export const QuotationForm = () => {
                                 <option value="">Select Customer</option>
                                 {customers.map((customer) => (
                                     <option key={customer.id} value={customer.id}>
-                                        {customer.name}
+                                        {customer.company_name}
                                     </option>
                                 ))}
                             </select>
                         </div>
+                        <div className="md:col-span-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Subject *</label>
+                            <input
+                                type="text"
+                                value={formData.subject}
+                                onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                                className="input w-full bg-white"
+                                required
+                                placeholder="To Supply Labor and Material..."
+                            />
+                        </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Quotation Date *</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
                             <input
                                 type="date"
                                 value={formData.date}
@@ -333,33 +374,12 @@ export const QuotationForm = () => {
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Valid Until *</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Valid Until</label>
                             <input
                                 type="date"
                                 value={formData.valid_until}
                                 onChange={(e) => setFormData({ ...formData, valid_until: e.target.value })}
                                 className="input w-full bg-white"
-                                required
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
-                            <input
-                                type="text"
-                                value={formData.payment_terms}
-                                onChange={(e) => setFormData({ ...formData, payment_terms: e.target.value })}
-                                className="input w-full bg-white"
-                                placeholder="e.g., Net 30"
-                            />
-                        </div>
-                        <div className="md:col-span-2">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-                            <textarea
-                                value={formData.notes}
-                                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                                className="input w-full bg-white"
-                                rows={3}
-                                placeholder="Optional notes"
                             />
                         </div>
                     </div>
@@ -378,12 +398,12 @@ export const QuotationForm = () => {
                         <table className="table">
                             <thead>
                                 <tr>
-                                    <th>Item Name</th>
+                                    <th>Item Selection (Auto-fill)</th>
                                     <th>Description</th>
                                     <th>Qty</th>
+                                    <th>UOM</th>
                                     <th>Unit Price</th>
-                                    <th>Discount %</th>
-                                    <th>Tax %</th>
+                                    <th>Disc %</th>
                                     <th>Total</th>
                                     <th>Action</th>
                                 </tr>
@@ -395,13 +415,12 @@ export const QuotationForm = () => {
                                             <select
                                                 value={item.item_id}
                                                 onChange={(e) => updateLineItem(item.id, 'item_id', e.target.value)}
-                                                className="input w-full min-w-[200px] bg-white"
-                                                required
+                                                className="input w-[150px] bg-white"
                                             >
-                                                <option value="">Select Item</option>
+                                                <option value="">Select...</option>
                                                 {items.map((i) => (
                                                     <option key={i.id} value={i.id}>
-                                                        {i.name} - ${i.price}
+                                                        {i.name}
                                                     </option>
                                                 ))}
                                             </select>
@@ -409,10 +428,10 @@ export const QuotationForm = () => {
                                         <td>
                                             <input
                                                 type="text"
-                                                value={item.description}
-                                                onChange={(e) => updateLineItem(item.id, 'description', e.target.value)}
-                                                className="input w-full min-w-[150px] bg-white"
-                                                placeholder="Description"
+                                                value={item.item_description}
+                                                onChange={(e) => updateLineItem(item.id, 'item_description', e.target.value)}
+                                                className="input w-full min-w-[200px] bg-white"
+                                                required
                                             />
                                         </td>
                                         <td>
@@ -420,45 +439,45 @@ export const QuotationForm = () => {
                                                 type="number"
                                                 value={item.quantity}
                                                 onChange={(e) => updateLineItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                                                className="input w-20 bg-white"
+                                                className="input w-16 bg-white"
                                                 min="1"
                                                 required
                                             />
+                                        </td>
+                                        <td>
+                                            <select
+                                                value={item.uom}
+                                                onChange={(e) => updateLineItem(item.id, 'uom', e.target.value)}
+                                                className="input w-16 bg-white"
+                                            >
+                                                <option value="EA">EA</option>
+                                                <option value="Lot">Lot</option>
+                                                <option value="Nos">Nos</option>
+                                                <option value="PCS">PCS</option>
+                                            </select>
                                         </td>
                                         <td>
                                             <input
                                                 type="number"
                                                 value={item.unit_price}
                                                 onChange={(e) => updateLineItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                                                className="input w-28 bg-white"
+                                                className="input w-24 bg-white"
                                                 step="0.01"
-                                                min="0"
                                                 required
                                             />
                                         </td>
                                         <td>
                                             <input
                                                 type="number"
-                                                value={item.discount}
-                                                onChange={(e) => updateLineItem(item.id, 'discount', parseFloat(e.target.value) || 0)}
-                                                className="input w-20 bg-white"
+                                                value={item.disc_percent}
+                                                onChange={(e) => updateLineItem(item.id, 'disc_percent', parseFloat(e.target.value) || 0)}
+                                                className="input w-16 bg-white"
                                                 step="0.01"
                                                 min="0"
                                                 max="100"
                                             />
                                         </td>
-                                        <td>
-                                            <input
-                                                type="number"
-                                                value={item.tax_rate}
-                                                onChange={(e) => updateLineItem(item.id, 'tax_rate', parseFloat(e.target.value) || 0)}
-                                                className="input w-20 bg-white"
-                                                step="0.01"
-                                                min="0"
-                                                max="100"
-                                            />
-                                        </td>
-                                        <td className="font-semibold">${item.total.toFixed(2)}</td>
+                                        <td className="font-semibold">${item.total_price.toFixed(2)}</td>
                                         <td>
                                             <button
                                                 type="button"
@@ -477,40 +496,37 @@ export const QuotationForm = () => {
                 </Card>
 
                 <Card>
-                    <h2 className="text-xl font-semibold mb-4">Totals</h2>
+                    <h2 className="text-xl font-semibold mb-4">Budget Summary</h2>
                     <div className="space-y-4 max-w-md ml-auto">
                         <div className="flex justify-between items-center">
-                            <span className="text-gray-600">Subtotal:</span>
+                            <span className="text-gray-600">Scope Total:</span>
                             <span className="font-semibold text-lg">${totals.subtotal.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between items-center gap-4">
-                            <label className="text-gray-600">Discount (%):</label>
+                            <label className="text-gray-600">Good Will Discount ($):</label>
                             <input
                                 type="number"
-                                value={formData.discount}
-                                onChange={(e) => setFormData({ ...formData, discount: parseFloat(e.target.value) || 0 })}
-                                className="input w-24 bg-white"
+                                value={formData.discount_amount}
+                                onChange={(e) => setFormData({ ...formData, discount_amount: parseFloat(e.target.value) || 0 })}
+                                className="input w-32 bg-white"
                                 step="0.01"
                                 min="0"
-                                max="100"
                             />
-                            <span className="font-semibold w-24 text-right">-${totals.discountAmount.toFixed(2)}</span>
                         </div>
+                        {/* GST Field if needed, defaulting to 0 as per requirements 'NO GST' */}
                         <div className="flex justify-between items-center gap-4">
-                            <label className="text-gray-600">Tax (%):</label>
+                            <label className="text-gray-600">GST Rate (%):</label>
                             <input
                                 type="number"
-                                value={formData.tax}
-                                onChange={(e) => setFormData({ ...formData, tax: parseFloat(e.target.value) || 0 })}
-                                className="input w-24 bg-white"
+                                value={formData.gst_rate}
+                                onChange={(e) => setFormData({ ...formData, gst_rate: parseFloat(e.target.value) || 0 })}
+                                className="input w-32 bg-white"
                                 step="0.01"
                                 min="0"
-                                max="100"
                             />
-                            <span className="font-semibold w-24 text-right">+${totals.taxAmount.toFixed(2)}</span>
                         </div>
                         <div className="border-t pt-4 flex justify-between items-center">
-                            <span className="text-xl font-bold">Total:</span>
+                            <span className="text-xl font-bold">Total Amount:</span>
                             <span className="text-2xl font-bold text-blue-600">${totals.total.toFixed(2)}</span>
                         </div>
                     </div>

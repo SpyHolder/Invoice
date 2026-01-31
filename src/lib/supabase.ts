@@ -10,111 +10,171 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // TypeScript interfaces for database tables
-export interface UserProfile {
+
+export interface Company {
     id: string;
-    full_name: string;
-    company_name: string;
-    email: string;
+    name: string; // Nama Perusahaan Kamu
+    address: string | null;
+    phone: string | null;
+    uen_number: string | null; // Co. UEN (Singapura)
+    logo_url: string | null;
+    created_at: string;
+}
+
+export interface BankAccount {
+    id: string;
+    company_id: string;
+    bank_name: string | null; // e.g. UOB Serangoon Central
+    bank_address: string | null;
+    account_number: string | null;
+    swift_code: string | null;
+    branch_code: string | null;
+    paynow_uen: string | null; // Field khusus sesuai Image 2
+    is_primary: boolean;
+}
+
+export interface Partner {
+    id: string;
+    type: 'customer' | 'vendor'; // Required
+    company_name: string; // Required: PT Jaya Subakti Perkasa / Samsung
+    attn_name?: string | null; // Optional: Ms. Kelly Teo / Maria
+    address?: string | null; // Billing Address
+    shipping_address?: string | null; // For Site Delivery (Image 3,4,5)
+    phone?: string | null;
+    email?: string | null;
     created_at: string;
 }
 
 export interface Item {
     id: string;
+    item_code: string | null; // e.g. QNO-6012R (Penting buat Image 5)
     name: string;
-    sku: string;
-    category: string;
-    price: number;
-    description: string;
-    stock: number;
-    min_stock: number;
-    created_at: string;
-}
-
-export interface Customer {
-    id: string;
-    name: string;
-    email: string | null;
-    phone: string | null;
-    address: string | null;
-    created_at: string;
-}
-
-export interface Invoice {
-    id: string;
-    invoice_number: string;
-    customer_id: string;
-    date: string;
-    due_date: string;
-    subtotal: number;
-    discount: number;
-    tax: number;
-    total: number;
-    notes: string | null;
-    status: string;
-    created_at: string;
-    customer?: Customer;
-}
-
-export interface InvoiceItem {
-    id: string;
-    invoice_id: string;
-    item_id?: string;
-    item_name: string;
     description: string | null;
-    quantity: number;
-    unit_price: number;
-    discount: number;
-    tax_rate: number;
-    total: number;
+    uom: string | null; // EA, Lot, Nos (Sesuai Image 1)
+    price: number;
 }
 
 export interface Quotation {
     id: string;
-    quotation_number: string;
+    quote_number: string; // CNK-Q25-30180-R1
+    quotation_number?: string; // Legacy/DB compat
     customer_id: string;
     date: string;
-    valid_until: string;
+    validity_date: string | null;
+    subject: string | null; // "To Supply Labor and Material..." (Image 1)
     subtotal: number;
-    discount: number;
-    tax: number;
-    total: number;
-    notes: string | null;
-    payment_terms: string | null;
+    discount_amount: number; // "Good Will Discount" (Image 1)
+    total_amount: number;
+    gst_rate: number; // "NO GST" note
     status: string;
-    created_at: string;
-    customer?: Customer;
 }
 
 export interface QuotationItem {
     id: string;
     quotation_id: string;
-    item_id?: string;
-    item_name: string;
+    item_description: string | null; // Bisa panjang
+    quantity: number;
+    uom: string | null;
+    unit_price: number;
+    disc_percent: number;
+    disc_amount: number;
+    total_price: number;
+}
+
+export interface SalesOrder {
+    id: string;
+    so_number: string | null;
+    quotation_id: string | null;
+    customer_po_number: string | null; // "4504642120" (Dari Image 2/3/4)
+    project_schedule_date: string | null;
+    status: string;
+}
+
+export interface SalesOrderItem {
+    id: string;
+    so_id: string;
     description: string | null;
     quantity: number;
-    unit_price: number;
+    uom: string | null;
+    phase_name: string | null; // e.g. "01 Phase", "02 Phase"
+}
+
+export interface DeliveryOrder {
+    id: string;
+    do_number: string; // CNK-DO-35258030
+    so_id: string | null;
+    date: string;
+    subject: string | null; // "01 Phase - Upon Project Schedule..." (Image 3)
+    terms: string | null; // "On-Site Delivery"
+    requestor_name: string | null; // "Sammy"
+    shipping_address_snapshot: string | null; // Alamat kirim specific saat itu
+}
+
+export interface DeliveryOrderItem {
+    id: string;
+    do_id: string;
+    item_code: string | null; // "00010", "00020"
+    description: string | null;
+    quantity: number;
+    uom: string | null;
+}
+
+export interface Invoice {
+    id: string;
+    invoice_number: string; // CNK-INV-35258030
+    so_id: string | null;
+    do_number_ref: string | null; // Referensi DO (Image 2)
+    date: string;
+    due_date: string | null;
+    terms: string | null; // "60 Days"
+    subject: string | null; // "01- 50% Upon Project..."
+    subtotal: number;
     discount: number;
-    tax_rate: number;
-    total: number;
+    tax: number; // Database column is 'tax', not 'tax_rate' or 'tax_amount'
+    grand_total: number;
+    payment_status: string; // unpaid, partial, paid
+    billing_type?: string; // itemized, milestone, final
+    customer?: Partner; // Helper for joins
+}
+
+export interface InvoiceItem {
+    id: string;
+    invoice_id: string;
+    item_code: string | null; // "00010"
+    description: string | null; // "01 - 50% Upon..."
+    quantity: number;
+    uom: string | null;
+    unit_price: number;
+    total_price: number;
+}
+
+export interface InvoicePayment {
+    id: string;
+    invoice_id: string;
+    date: string;
+    amount: number;
+    method: string | null;
+    notes: string | null;
 }
 
 export interface PurchaseOrder {
     id: string;
-    vendor_name: string;
-    date: string;
-    status: 'pending' | 'received' | 'cancelled';
-    total: number;
-    notes: string | null;
-    created_at: string;
+    po_number: string; // CNK-P25-30040
+    vendor_id: string | null; // Link ke Vendor
+    date: string | null;
+    quote_ref: string | null; // Ref Quote Vendor
+    shipping_info: string | null; // "Ship Via: FCA..."
+    delivery_address: string | null; // "Working Site Address"
+    status: string;
+    vendor?: Partner;
 }
 
 export interface PurchaseOrderItem {
     id: string;
-    purchase_order_id: string;
-    item_id: string;
-    item_name: string;
+    po_id: string;
+    item_code: string | null; // HW-QNO...
+    description: string | null;
     quantity: number;
     unit_price: number;
     total: number;
-    item?: Item;
 }
