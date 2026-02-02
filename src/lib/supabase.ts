@@ -48,10 +48,15 @@ export interface Partner {
 export interface Item {
     id: string;
     item_code: string | null; // e.g. QNO-6012R (Penting buat Image 5)
+    sku: string | null;
     name: string;
     description: string | null;
+    category: string | null;
     uom: string | null; // EA, Lot, Nos (Sesuai Image 1)
     price: number;
+    stock: number;
+    min_stock: number;
+    created_at?: string;
 }
 
 export interface Quotation {
@@ -65,8 +70,11 @@ export interface Quotation {
     subtotal: number;
     discount_amount: number; // "Good Will Discount" (Image 1)
     total_amount: number;
+    total?: number; // Legacy/DB compat
     gst_rate: number; // "NO GST" note
     status: string;
+    customer?: Partner; // Helper for joins
+    created_at?: string;
 }
 
 export interface QuotationItem {
@@ -165,13 +173,18 @@ export interface PurchaseOrder {
     quote_ref: string | null; // Ref Quote Vendor
     shipping_info: string | null; // "Ship Via: FCA..."
     delivery_address: string | null; // "Working Site Address"
+    notes?: string | null;
     status: string;
+    total: number;
+    vendor_name?: string; // Helper for display
     vendor?: Partner;
+    created_at?: string;
 }
 
 export interface PurchaseOrderItem {
     id: string;
-    po_id: string;
+    purchase_order_id: string;
+    item_id?: string | null;
     item_code: string | null; // HW-QNO...
     description: string | null;
     quantity: number;

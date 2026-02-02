@@ -191,20 +191,20 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
                 <div className="flex justify-end mb-4">
                     <div className="w-1/3 border border-black">
                         <div className="flex justify-between border-b border-black p-1">
-                            <span>GST {invoice.tax_rate || 0}%</span>
-                            <span>{invoice.tax_amount?.toFixed(2) || '0.00'}</span>
+                            <span>GST {(invoice as any).tax_rate || 0}%</span>
+                            <span>{((invoice as any).tax_amount || 0).toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between border-b border-black p-1">
                             <span>Sub-Total</span>
-                            <span>{invoice.subtotal?.toFixed(2)}</span>
+                            <span>{(invoice.subtotal || 0).toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between border-b border-black p-1">
                             <span>Discount</span>
-                            <span>({invoice.discount?.toFixed(2)})</span>
+                            <span>({(invoice.discount || 0).toFixed(2)})</span>
                         </div>
                         <div className="flex justify-between p-1 font-bold">
                             <span>Total (SGD)</span>
-                            <span>{invoice.grand_total?.toFixed(2)}</span>
+                            <span>{(invoice.grand_total || 0).toFixed(2)}</span>
                         </div>
                     </div>
                 </div>

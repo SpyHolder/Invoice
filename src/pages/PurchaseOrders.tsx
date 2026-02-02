@@ -132,7 +132,7 @@ export const PurchaseOrders = () => {
                                 {purchaseOrders.map((po) => (
                                     <tr key={po.id}>
                                         <td className="font-medium">{po.vendor_name}</td>
-                                        <td>{new Date(po.date).toLocaleDateString()}</td>
+                                        <td>{po.date ? new Date(po.date).toLocaleDateString() : '-'}</td>
                                         <td>${po.total.toFixed(2)}</td>
                                         <td>
                                             <span

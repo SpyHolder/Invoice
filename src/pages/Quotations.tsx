@@ -147,7 +147,7 @@ export const Quotations = () => {
                             <tbody>
                                 {quotations.map((quotation) => (
                                     <tr key={quotation.id}>
-                                        <td className="font-medium">{quotation.customer?.company_name}</td>
+                                        <td className="font-medium">{(quotation as any).customer?.company_name || '-'}</td>
                                         <td>{quotation.quotation_number || quotation.quote_number}</td>
                                         <td>{new Date(quotation.date).toLocaleDateString()}</td>
                                         <td>{quotation.validity_date ? new Date(quotation.validity_date).toLocaleDateString() : '-'}</td>

@@ -8,14 +8,12 @@ import { supabase } from '../lib/supabase';
 export const SalesOrders = () => {
     const navigate = useNavigate();
     const [orders, setOrders] = useState<any[]>([]); // Using any for joined data convenience
-    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         fetchOrders();
     }, []);
 
     const fetchOrders = async () => {
-        setLoading(true);
         try {
             // Join with Quotations to get Customer? 
             // Supabase client might not support deep joins in one query easily without type hacking or view.
@@ -37,8 +35,6 @@ export const SalesOrders = () => {
             setOrders(data || []);
         } catch (error) {
             console.error('Error fetching sales orders:', error);
-        } finally {
-            setLoading(false);
         }
     };
 

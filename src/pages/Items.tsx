@@ -36,8 +36,8 @@ export const Items = () => {
     useEffect(() => {
         const filtered = items.filter(item =>
             item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            item.sku?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            item.category?.toLowerCase().includes(searchQuery.toLowerCase())
+            (item.sku || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (item.category || '').toLowerCase().includes(searchQuery.toLowerCase())
         );
         setFilteredItems(filtered);
     }, [items, searchQuery]);

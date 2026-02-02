@@ -22,8 +22,6 @@ export const InvoiceForm = () => {
     // const { user } = useAuth();
     const { id } = useParams();
     const [searchParams] = useSearchParams();
-    const soIdParam = searchParams.get('so_id');
-    const doIdParam = searchParams.get('do_id');
     const navigate = useNavigate();
     const { showToast } = useToast();
 

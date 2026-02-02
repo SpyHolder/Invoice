@@ -3,8 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Plus, Trash2, ArrowLeft } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { supabase, Item, Partner, PurchaseOrderItem } from '../lib/supabase';
-import { useAuth } from '../contexts/AuthContext';
+import { supabase, Item, Partner } from '../lib/supabase';
 import { useToast } from '../contexts/ToastContext';
 
 interface POLineItem {
