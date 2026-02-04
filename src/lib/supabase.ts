@@ -108,30 +108,34 @@ export interface SalesOrderItem {
 }
 
 export interface DeliveryOrder {
-    id: string;
-    do_number: string; // CNK-DO-35258030
+    id?: string;
+    do_number: string | null;
     so_id: string | null;
-    date: string;
-    subject: string | null; // "01 Phase - Upon Project Schedule..." (Image 3)
-    terms: string | null; // "On-Site Delivery"
-    requestor_name: string | null; // "Sammy"
-    shipping_address_snapshot: string | null; // Alamat kirim specific saat itu
+    date: string | null;
+    subject?: string | null;  // Subject/description for DO
+    terms: string | null;
+    requestor_name: string | null;
+    shipping_address_snapshot: string | null;
+    customer_id?: string | null;
+    created_at?: string;
 }
 
 export interface DeliveryOrderItem {
-    id: string;
+    id?: string;
     do_id: string;
     item_code: string | null; // "00010", "00020"
     description: string | null;
     quantity: number;
     uom: string | null;
+    group_name?: string | null;
+    created_at?: string;
 }
 
 export interface Invoice {
     id: string;
     invoice_number: string; // CNK-INV-35258030
     so_id: string | null;
-    do_number_ref: string | null; // Referensi DO (Image 2)
+    do_number_ref: string | null; // Referensi DO (Image 2) - LEGACY
     date: string;
     due_date: string | null;
     terms: string | null; // "60 Days"
@@ -142,12 +146,25 @@ export interface Invoice {
     grand_total: number;
     payment_status: string; // unpaid, partial, paid
     billing_type?: string; // itemized, milestone, final
+    invoice_type?: string; // legacy, do_based
+    total_sections?: number; // Number of DO sections
     customer?: Partner; // Helper for joins
+}
+
+export interface InvoiceDeliverySection {
+    id: string;
+    invoice_id: string;
+    do_id: string;
+    section_number: number;
+    section_label: string | null;
+    created_at?: string;
+    delivery_order?: DeliveryOrder; // Helper for joins
 }
 
 export interface InvoiceItem {
     id: string;
     invoice_id: string;
+    do_section_id?: string | null; // Reference to which DO section
     item_code: string | null; // "00010"
     description: string | null; // "01 - 50% Upon..."
     quantity: number;

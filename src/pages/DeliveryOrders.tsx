@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Eye, Edit } from 'lucide-react';
+import { Plus, Eye, Edit, FileText } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { supabase } from '../lib/supabase';
@@ -97,6 +97,13 @@ export const DeliveryOrders = () => {
                                                     title="Edit"
                                                 >
                                                     <Edit className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => navigate(`/invoices/new?so_id=${doRecord.so_id}`)}
+                                                    className="p-1 text-gray-600 hover:text-green-600"
+                                                    title="Create Invoice"
+                                                >
+                                                    <FileText className="w-4 h-4" />
                                                 </button>
                                             </div>
                                         </td>

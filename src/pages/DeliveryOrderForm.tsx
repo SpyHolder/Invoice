@@ -46,6 +46,9 @@ export const DeliveryOrderForm = () => {
 
     const [groups, setGroups] = useState<DOGroup[]>([]);
     const [ungroupedItems, setUngroupedItems] = useState<DOItem[]>([]);
+    const [newGroupName, setNewGroupName] = useState('');
+    const [qtyInputs, setQtyInputs] = useState<Record<string, number>>({}); // Track qty for each SO item
+
 
     useEffect(() => {
         fetchSalesOrders();
@@ -189,7 +192,9 @@ export const DeliveryOrderForm = () => {
 
                 items.forEach(item => {
                     const groupName = item.group_name;
-                    if (groupName && groupName !== 'Ungrouped') {
+                    // Check if item should be grouped or ungrouped
+                    // Ungrouped: null, undefined, empty string, or 'Ungrouped'
+                    if (groupName && groupName.trim() !== '' && groupName !== 'Ungrouped') {
                         if (!grouped[groupName]) grouped[groupName] = [];
                         grouped[groupName].push({
                             id: item.id,
@@ -311,30 +316,164 @@ export const DeliveryOrderForm = () => {
         }]);
     };
 
-    // Get SO items that are not in any phase group
-    const getAvailableSOItems = () => {
-        if (!formData.so_id || availableItems.length === 0) return [];
+    // Custom Group Management
+    const handleCreateCustomGroup = () => {
+        if (!newGroupName.trim()) return;
 
-        // Get all item descriptions that are already in phase groups
-        const groupedDescriptions = new Set(
-            groups.flatMap(g => g.items.map(i => i.description))
-        );
+        // Check for duplicate names
+        if (groups.some(g => g.name.toLowerCase() === newGroupName.trim().toLowerCase())) {
+            showToast('Group name already exists', 'error');
+            return;
+        }
 
-        // Filter out items that are already in groups
-        return availableItems.filter(item => !groupedDescriptions.has(item.description));
+        const newGroup: DOGroup = {
+            id: `custom-${Date.now()}`,
+            name: newGroupName.trim(),
+            items: []
+        };
+
+        setGroups([...groups, newGroup]);
+        setNewGroupName('');
+        showToast(`Group "${newGroupName}" created`, 'success');
     };
 
-    const handleAddFromSOItem = (soItem: SalesOrderItem) => {
+    const handleRenameGroup = (groupId: string, newName: string) => {
+        if (!newName.trim()) return;
+
+        setGroups(groups.map(g =>
+            g.id === groupId
+                ? { ...g, name: newName.trim(), items: g.items.map(i => ({ ...i, group_name: newName.trim() })) }
+                : g
+        ));
+    };
+
+    const handleDeleteGroup = (groupId: string) => {
+        const group = groups.find(g => g.id === groupId);
+        if (!group) return;
+
+        // Move items to ungrouped
+        const itemsToMove = group.items.map(i => ({ ...i, group_name: null }));
+        setUngroupedItems([...ungroupedItems, ...itemsToMove]);
+
+        // Remove group
+        setGroups(groups.filter(g => g.id !== groupId));
+        showToast(`Group "${group.name}" deleted, ${itemsToMove.length} items moved to Ungrouped`, 'info');
+    };
+
+    const handleMoveItem = (
+        fromGroupId: string | null,  // null = ungrouped
+        itemId: string,
+        toGroupId: string | null
+    ) => {
+        let itemToMove: DOItem | undefined;
+
+        // Remove from source
+        if (fromGroupId) {
+            const sourceGroup = groups.find(g => g.id === fromGroupId);
+            itemToMove = sourceGroup?.items.find(i => i.id === itemId);
+            setGroups(groups.map(g => {
+                if (g.id === fromGroupId) {
+                    return { ...g, items: g.items.filter(i => i.id !== itemId) };
+                }
+                return g;
+            }));
+        } else {
+            itemToMove = ungroupedItems.find(i => i.id === itemId);
+            setUngroupedItems(ungroupedItems.filter(i => i.id !== itemId));
+        }
+
+        if (!itemToMove) return;
+
+        // Add to destination
+        if (toGroupId) {
+            setGroups(groups.map(g =>
+                g.id === toGroupId
+                    ? { ...g, items: [...g.items, { ...itemToMove, group_name: g.name }] }
+                    : g
+            ));
+        } else {
+            setUngroupedItems([...ungroupedItems, { ...itemToMove, group_name: null }]);
+        }
+    };
+
+    // Qty tracking functions
+    const getTotalAssignedQty = (soItemDescription: string): number => {
+        let total = 0;
+
+        // Count from groups
+        groups.forEach(group => {
+            group.items.forEach(item => {
+                if (item.description === soItemDescription) {
+                    total += item.quantity;
+                }
+            });
+        });
+
+        // Count from ungrouped
+        ungroupedItems.forEach(item => {
+            if (item.description === soItemDescription) {
+                total += item.quantity;
+            }
+        });
+
+        return total;
+    };
+
+    const getRemainingQty = (soItem: SalesOrderItem): number => {
+        const assigned = getTotalAssignedQty(soItem.description || '');
+        return soItem.quantity - assigned;
+    };
+
+    // Updated: Support partial qty assignment
+    const handleAssignSOItemToGroup = (soItem: SalesOrderItem, targetGroupId: string | null, qty: number) => {
+        const remaining = getRemainingQty(soItem);
+
+        // Validation
+        if (qty <= 0) {
+            showToast('Quantity must be greater than 0', 'error');
+            return;
+        }
+
+        if (qty > remaining) {
+            showToast(`Only ${remaining} ${soItem.uom} remaining for this item`, 'error');
+            return;
+        }
+
+        // Create new DOItem from SO item with specified qty
         const newItem: DOItem = {
-            id: `so-ungrouped-${Date.now()}`,
+            id: `so-${Date.now()}-${Math.random()}`,
             do_id: '',
             item_code: '',
             description: soItem.description || '',
-            quantity: soItem.quantity,
+            quantity: qty,  // Use specified qty
             uom: soItem.uom || 'EA',
             group_name: null
         };
-        setUngroupedItems([...ungroupedItems, newItem]);
+
+        if (targetGroupId) {
+            // Add to specific group
+            setGroups(groups.map(g =>
+                g.id === targetGroupId
+                    ? { ...g, items: [...g.items, { ...newItem, group_name: g.name }] }
+                    : g
+            ));
+            showToast(`Added ${qty} ${soItem.uom} to ${groups.find(g => g.id === targetGroupId)?.name}`, 'success');
+        } else {
+            // Add to ungrouped
+            setUngroupedItems([...ungroupedItems, newItem]);
+            showToast(`Added ${qty} ${soItem.uom} to Ungrouped`, 'success');
+        }
+    };
+
+    // Get SO items that still have remaining qty
+    const getAvailableSOItems = () => {
+        if (!formData.so_id || availableItems.length === 0) return [];
+
+        // Return items that still have remaining qty
+        return availableItems.filter(soItem => {
+            const remaining = getRemainingQty(soItem);
+            return remaining > 0;  // Show if any qty left
+        });
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -463,6 +602,34 @@ export const DeliveryOrderForm = () => {
                             </div>
                         )}
 
+                        {/* Custom Group Creation */}
+                        {formData.so_id && !isEditMode && (
+                            <div className="md:col-span-2">
+                                <Card className="bg-green-50 border-green-200">
+                                    <h3 className="font-semibold mb-3 text-green-900">➕ Create Custom Group</h3>
+                                    <p className="text-sm text-gray-600 mb-3">Create groups with any name to organize items flexibly (e.g., "Priority Items", "Week 1 Delivery")</p>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={newGroupName}
+                                            onChange={(e) => setNewGroupName(e.target.value)}
+                                            onKeyPress={(e) => e.key === 'Enter' && handleCreateCustomGroup()}
+                                            placeholder="Enter group name..."
+                                            className="flex-1 border rounded-lg p-2 bg-white"
+                                        />
+                                        <Button
+                                            type="button"
+                                            onClick={handleCreateCustomGroup}
+                                            disabled={!newGroupName.trim()}
+                                            variant="secondary"
+                                        >
+                                            Create Group
+                                        </Button>
+                                    </div>
+                                </Card>
+                            </div>
+                        )}
+
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Subject *</label>
                             <input
@@ -504,6 +671,16 @@ export const DeliveryOrderForm = () => {
                             />
                         </div>
                         <div className="md:col-span-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+                            <input
+                                type="text"
+                                value={formData.subject}
+                                onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                                className="input w-full bg-white"
+                                placeholder="e.g. buat menghasilkan sawit"
+                            />
+                        </div>
+                        <div className="md:col-span-2">
                             <label className="block text-sm font-medium text-gray-700 mb-1">Shipping Address Snapshot</label>
                             <textarea
                                 value={formData.shipping_address_snapshot}
@@ -514,15 +691,31 @@ export const DeliveryOrderForm = () => {
                     </div>
                 </Card>
 
-                {/* Phase Groups */}
+                {/* Items Code Sections */}
                 {groups.length > 0 && (
                     <div className="space-y-4">
-                        <h2 className="text-2xl font-bold">Phase Groups</h2>
+                        <h2 className="text-2xl font-bold">Items Code Sections</h2>
                         {groups.map((group) => (
                             <Card key={group.id} className="bg-blue-50">
                                 <div className="flex justify-between items-center mb-4 pb-2 border-b border-blue-200">
-                                    <h3 className="text-lg font-bold text-blue-900">{group.name}</h3>
-                                    <span className="text-sm text-blue-600">{group.items.length} items</span>
+                                    <input
+                                        type="text"
+                                        value={group.name}
+                                        onChange={(e) => handleRenameGroup(group.id || '', e.target.value)}
+                                        className="text-lg font-bold bg-transparent border-b-2 border-transparent hover:border-blue-400 focus:border-blue-600 focus:outline-none text-blue-900 px-1"
+                                        title="Click to edit group name"
+                                    />
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-sm text-blue-600">{group.items.length} items</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDeleteGroup(group.id)}
+                                            className="text-red-500 hover:text-red-700 p-1"
+                                            title="Delete Group (items will move to Ungrouped)"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <table className="table w-full">
@@ -532,6 +725,7 @@ export const DeliveryOrderForm = () => {
                                             <th>Description</th>
                                             <th className="w-24">Qty</th>
                                             <th className="w-24">UOM</th>
+                                            <th className="w-32">Move To</th>
                                             <th className="w-10"></th>
                                         </tr>
                                     </thead>
@@ -542,7 +736,7 @@ export const DeliveryOrderForm = () => {
                                                     <input
                                                         type="text"
                                                         value={item.item_code || ''}
-                                                        onChange={(e) => handleItemChange(group.id, item.id, 'item_code', e.target.value)}
+                                                        onChange={(e) => handleItemChange(group.id || '', item.id || '', 'item_code', e.target.value)}
                                                         className="input w-full"
                                                         placeholder="Code"
                                                     />
@@ -551,7 +745,7 @@ export const DeliveryOrderForm = () => {
                                                     <input
                                                         type="text"
                                                         value={item.description || ''}
-                                                        onChange={(e) => handleItemChange(group.id, item.id, 'description', e.target.value)}
+                                                        onChange={(e) => handleItemChange(group.id || '', item.id || '', 'description', e.target.value)}
                                                         className="input w-full"
                                                     />
                                                 </td>
@@ -559,7 +753,7 @@ export const DeliveryOrderForm = () => {
                                                     <input
                                                         type="number"
                                                         value={item.quantity}
-                                                        onChange={(e) => handleItemChange(group.id, item.id, 'quantity', parseFloat(e.target.value))}
+                                                        onChange={(e) => handleItemChange(group.id || '', item.id || '', 'quantity', parseFloat(e.target.value))}
                                                         className="input w-full"
                                                     />
                                                 </td>
@@ -567,12 +761,30 @@ export const DeliveryOrderForm = () => {
                                                     <input
                                                         type="text"
                                                         value={item.uom || ''}
-                                                        onChange={(e) => handleItemChange(group.id, item.id, 'uom', e.target.value)}
+                                                        onChange={(e) => handleItemChange(group.id || '', item.id || '', 'uom', e.target.value)}
                                                         className="input w-full"
                                                     />
                                                 </td>
                                                 <td>
-                                                    <button type="button" onClick={() => handleRemoveItem(group.id, item.id)} className="text-red-500">
+                                                    <select
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            const targetId = val === '__ungrouped__' ? null : val;
+                                                            handleMoveItem(group.id || '', item.id || '', targetId);
+                                                            e.target.value = '';  // Reset
+                                                        }}
+                                                        className="input w-full text-xs"
+                                                        value=""
+                                                    >
+                                                        <option value="">Move To...</option>
+                                                        <option value="__ungrouped__">→ Ungrouped</option>
+                                                        {groups.filter(g => g.id !== group.id).map(g => (
+                                                            <option key={g.id} value={g.id || ''}>→ {g.name}</option>
+                                                        ))}
+                                                    </select>
+                                                </td>
+                                                <td>
+                                                    <button type="button" onClick={() => handleRemoveItem(group.id || '', item.id || '')} className="text-red-500">
                                                         <Trash2 className="w-4 h-4" />
                                                     </button>
                                                 </td>
@@ -599,37 +811,76 @@ export const DeliveryOrderForm = () => {
                         </div>
                     </div>
 
-                    {/* Available SO Items Picker */}
+                    {/* Enhanced SO Items Pool with Group Assignment */}
                     {formData.so_id && getAvailableSOItems().length > 0 && (
-                        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded">
-                            <p className="text-sm font-semibold text-blue-900 mb-2">📦 Available SO Items (not in phase groups):</p>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto">
-                                {getAvailableSOItems().map((soItem, idx) => (
-                                    <button
-                                        key={idx}
-                                        type="button"
-                                        onClick={() => handleAddFromSOItem(soItem)}
-                                        className="text-left p-2 bg-white border border-blue-300 rounded hover:bg-blue-100 text-sm flex justify-between items-center"
-                                    >
-                                        <span className="truncate">
-                                            {soItem.description} ({soItem.quantity} {soItem.uom})
-                                            {soItem.phase_name && <span className="text-gray-500 text-xs ml-1">({soItem.phase_name})</span>}
-                                        </span>
-                                        <Plus className="w-3 h-3 text-blue-600 flex-shrink-0 ml-2" />
-                                    </button>
-                                ))}
+                        <Card className="bg-purple-50 border-purple-200">
+                            <h3 className="font-semibold text-purple-900 mb-3">📦 Available Items from SO</h3>
+                            <p className="text-sm text-gray-600 mb-3">Assign items directly to groups or add to ungrouped. Specify quantity for each assignment.</p>
+                            <div className="grid grid-cols-1 gap-2 max-h-96 overflow-y-auto">
+                                {getAvailableSOItems().map((soItem, idx) => {
+                                    const remaining = getRemainingQty(soItem);
+                                    const qtyKey = `so-${idx}`;
+                                    const currentQty = qtyInputs[qtyKey] ?? remaining;
+
+                                    return (
+                                        <div
+                                            key={idx}
+                                            className="flex items-center gap-2 p-2 bg-white border border-purple-300 rounded hover:bg-purple-50"
+                                        >
+                                            <span className="flex-1 text-sm">
+                                                <strong>{soItem.description}</strong>
+                                                <span className="text-emerald-600 font-medium ml-2">
+                                                    ({remaining} of {soItem.quantity} {soItem.uom} remaining)
+                                                </span>
+                                                {soItem.phase_name && <span className="text-gray-500 text-xs ml-1">• {soItem.phase_name}</span>}
+                                            </span>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max={remaining}
+                                                value={currentQty}
+                                                onChange={(e) => {
+                                                    const val = Math.min(parseInt(e.target.value) || 0, remaining);
+                                                    setQtyInputs({ ...qtyInputs, [qtyKey]: val });
+                                                }}
+                                                className="border rounded px-2 py-1 w-20 text-sm text-center"
+                                                placeholder="Qty"
+                                            />
+                                            <select
+                                                onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    if (value && currentQty > 0) {
+                                                        const targetGroupId = value === '__ungrouped__' ? null : value;
+                                                        handleAssignSOItemToGroup(soItem, targetGroupId, currentQty);
+                                                        setQtyInputs({ ...qtyInputs, [qtyKey]: Math.max(0, remaining - currentQty) });
+                                                        e.target.value = ''; // Reset dropdown
+                                                    }
+                                                }}
+                                                className="border rounded p-1 text-sm bg-white min-w-[120px]"
+                                                value=""
+                                            >
+                                                <option value="">Add to...</option>
+                                                <option value="__ungrouped__">Ungrouped</option>
+                                                {groups.map(g => (
+                                                    <option key={g.id} value={g.id || ''}>{g.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    );
+                                })}
                             </div>
-                        </div>
+                        </Card>
                     )}
 
                     {ungroupedItems.length > 0 ? (
                         <table className="table w-full">
                             <thead>
                                 <tr>
-                                    <th>Item Code</th>
-                                    <th>Description</th>
-                                    <th className="w-24">Qty</th>
-                                    <th className="w-24">UOM</th>
+                                    <th className="w-60">Item Code</th>
+                                    <th className="w-60">Description</th>
+                                    <th className="w-20">Qty</th>
+                                    <th className="w-20">UOM</th>
+                                    <th className="w-32">Move To</th>
                                     <th className="w-10"></th>
                                 </tr>
                             </thead>
@@ -640,7 +891,7 @@ export const DeliveryOrderForm = () => {
                                             <input
                                                 type="text"
                                                 value={item.item_code || ''}
-                                                onChange={(e) => handleUngroupedItemChange(item.id, 'item_code', e.target.value)}
+                                                onChange={(e) => handleUngroupedItemChange(item.id || '', 'item_code', e.target.value)}
                                                 className="input w-full"
                                                 placeholder="Code"
                                             />
@@ -649,7 +900,7 @@ export const DeliveryOrderForm = () => {
                                             <input
                                                 type="text"
                                                 value={item.description || ''}
-                                                onChange={(e) => handleUngroupedItemChange(item.id, 'description', e.target.value)}
+                                                onChange={(e) => handleUngroupedItemChange(item.id || '', 'description', e.target.value)}
                                                 className="input w-full"
                                             />
                                         </td>
@@ -657,7 +908,7 @@ export const DeliveryOrderForm = () => {
                                             <input
                                                 type="number"
                                                 value={item.quantity}
-                                                onChange={(e) => handleUngroupedItemChange(item.id, 'quantity', parseFloat(e.target.value))}
+                                                onChange={(e) => handleUngroupedItemChange(item.id || '', 'quantity', parseFloat(e.target.value))}
                                                 className="input w-full"
                                             />
                                         </td>
@@ -665,12 +916,24 @@ export const DeliveryOrderForm = () => {
                                             <input
                                                 type="text"
                                                 value={item.uom || ''}
-                                                onChange={(e) => handleUngroupedItemChange(item.id, 'uom', e.target.value)}
+                                                onChange={(e) => handleUngroupedItemChange(item.id || '', 'uom', e.target.value)}
                                                 className="input w-full"
                                             />
                                         </td>
                                         <td>
-                                            <button type="button" onClick={() => handleRemoveUngroupedItem(item.id)} className="text-red-500">
+                                            <select
+                                                onChange={(e) => handleMoveItem(null, item.id || '', e.target.value || null)}
+                                                className="input w-full text-xs"
+                                                value=""
+                                            >
+                                                <option value="">Move...</option>
+                                                {groups.map(g => (
+                                                    <option key={g.id} value={g.id}>→ {g.name}</option>
+                                                ))}
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <button type="button" onClick={() => handleRemoveUngroupedItem(item.id || '')} className="text-red-500">
                                                 <Trash2 className="w-4 h-4" />
                                             </button>
                                         </td>
@@ -695,3 +958,4 @@ export const DeliveryOrderForm = () => {
         </div>
     );
 };
+

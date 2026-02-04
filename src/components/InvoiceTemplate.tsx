@@ -1,17 +1,18 @@
-import { forwardRef } from 'react';
-import { Invoice, InvoiceItem, Partner, Company, BankAccount } from '../lib/supabase';
+import React, { forwardRef } from 'react';
+import { Invoice, InvoiceItem, Partner, Company, BankAccount, InvoiceDeliverySection } from '../lib/supabase';
 import { PaymentInstructions } from './PaymentInstructions';
 
 interface InvoiceTemplateProps {
     invoice: Invoice;
     customer: Partner;
     items: InvoiceItem[];
+    doSections?: InvoiceDeliverySection[]; // Optional for legacy invoices
     company?: Company;
     bankAccounts?: BankAccount[];
 }
 
 export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
-    ({ invoice, customer, items, company, bankAccounts }, ref) => {
+    ({ invoice, customer, items, doSections = [], company, bankAccounts }, ref) => {
         const formatDate = (dateString: string) => {
             return new Date(dateString).toLocaleDateString('en-GB', {
                 year: 'numeric',
@@ -173,17 +174,55 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
                         </tr>
                     </thead>
                     <tbody>
-                        {items.map((item, index) => (
-                            <tr key={item.id} className="border-b border-black">
-                                <td className="border-r border-black p-1 text-center">{index + 1}</td>
-                                <td className="border-r border-black p-1">{item.item_code}</td>
-                                <td className="border-r border-black p-1">{item.description || item.item_code}</td>
-                                <td className="border-r border-black p-1 text-center">{item.quantity}</td>
-                                <td className="border-r border-black p-1 text-center">{item.uom}</td>
-                                <td className="border-r border-black p-1 text-right">{item.unit_price.toFixed(2)}</td>
-                                <td className="p-1 text-right">{item.total_price.toFixed(2)}</td>
-                            </tr>
-                        ))}
+                        {doSections && doSections.length > 0 ? (
+                            // DO-based invoice: Show sections with headers
+                            doSections.map((section) => {
+                                const sectionItems = items.filter(item => item.do_section_id === section.id);
+                                let itemCounter = items.filter(item =>
+                                    doSections.findIndex(s => s.id === item.do_section_id) <
+                                    doSections.findIndex(s => s.id === section.id)
+                                ).length;
+
+                                return (
+                                    <React.Fragment key={section.id}>
+                                        {/* Section Header */}
+                                        <tr className="bg-blue-100 border-b border-black">
+                                            <td colSpan={7} className="p-2 font-bold text-blue-900">
+                                                {section.section_label || `Section ${section.section_number}`}
+                                            </td>
+                                        </tr>
+                                        {/* Section Items */}
+                                        {sectionItems.map((item) => {
+                                            itemCounter++;
+                                            return (
+                                                <tr key={item.id} className="border-b border-black">
+                                                    <td className="border-r border-black p-1 text-center">{itemCounter}</td>
+                                                    <td className="border-r border-black p-1">{item.item_code}</td>
+                                                    <td className="border-r border-black p-1">{item.description || item.item_code}</td>
+                                                    <td className="border-r border-black p-1 text-center">{item.quantity}</td>
+                                                    <td className="border-r border-black p-1 text-center">{item.uom}</td>
+                                                    <td className="border-r border-black p-1 text-right">{item.unit_price.toFixed(2)}</td>
+                                                    <td className="p-1 text-right">{item.total_price.toFixed(2)}</td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </React.Fragment>
+                                );
+                            })
+                        ) : (
+                            // Legacy invoice: Show items normally
+                            items.map((item, index) => (
+                                <tr key={item.id} className="border-b border-black">
+                                    <td className="border-r border-black p-1 text-center">{index + 1}</td>
+                                    <td className="border-r border-black p-1">{item.item_code}</td>
+                                    <td className="border-r border-black p-1">{item.description || item.item_code}</td>
+                                    <td className="border-r border-black p-1 text-center">{item.quantity}</td>
+                                    <td className="border-r border-black p-1 text-center">{item.uom}</td>
+                                    <td className="border-r border-black p-1 text-right">{item.unit_price.toFixed(2)}</td>
+                                    <td className="p-1 text-right">{item.total_price.toFixed(2)}</td>
+                                </tr>
+                            ))
+                        )}
                     </tbody>
                 </table>
 

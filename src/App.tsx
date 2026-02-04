@@ -12,6 +12,7 @@ import { Customers } from './pages/Customers';
 import { Vendors } from './pages/Vendors';
 import { Invoices } from './pages/Invoices';
 import { InvoiceForm } from './pages/InvoiceForm';
+import { InvoiceFormNew } from './pages/InvoiceFormNew';
 import { ViewInvoice } from './pages/ViewInvoice';
 import { Quotations } from './pages/Quotations';
 import { QuotationForm } from './pages/QuotationForm';
@@ -93,7 +94,7 @@ function App() {
                             element={
                                 <ProtectedRoute>
                                     <MainLayout>
-                                        <InvoiceForm />
+                                        <InvoiceFormNew />
                                     </MainLayout>
                                 </ProtectedRoute>
                             }

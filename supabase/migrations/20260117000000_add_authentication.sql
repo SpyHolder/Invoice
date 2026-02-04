@@ -277,12 +277,14 @@ CREATE POLICY "Users can delete own purchase_order_items" ON purchase_order_item
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
 BEGIN
-  INSERT INTO public.user_profiles (id, email, full_name)
+  INSERT INTO public.user_profiles (id, email, full_name, company_name)
   VALUES (
     new.id,
     new.email,
-    COALESCE(new.raw_user_meta_data->>'full_name', '')
-  );
+    COALESCE(new.raw_user_meta_data->>'full_name', ''),
+    COALESCE(new.raw_user_meta_data->>'company_name', '')
+  )
+  ON CONFLICT (id) DO NOTHING; -- Prevent duplicate key errors
   RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

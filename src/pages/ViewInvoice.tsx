@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useReactToPrint } from 'react-to-print';
 import { ArrowLeft, Printer } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { supabase, Invoice, InvoiceItem, Partner, Company, BankAccount } from '../lib/supabase';
+import { supabase, Invoice, InvoiceItem, Partner, Company, BankAccount, InvoiceDeliverySection } from '../lib/supabase';
 import { InvoiceTemplate } from '../components/InvoiceTemplate';
 
 export const ViewInvoice = () => {
@@ -14,6 +14,7 @@ export const ViewInvoice = () => {
     const [invoice, setInvoice] = useState<Invoice | null>(null);
     const [customer, setCustomer] = useState<Partner | null>(null);
     const [items, setItems] = useState<InvoiceItem[]>([]);
+    const [doSections, setDoSections] = useState<InvoiceDeliverySection[]>([]);
     const [company, setCompany] = useState<Company | undefined>(undefined);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [loading, setLoading] = useState(true);
@@ -60,6 +61,18 @@ export const ViewInvoice = () => {
 
             if (itemsError) throw itemsError;
             setItems(itemsData || []);
+
+            // Fetch DO sections if invoice is DO-based
+            if (invoiceData.invoice_type === 'do_based') {
+                const { data: sectionsData, error: sectionsError } = await supabase
+                    .from('invoice_delivery_sections')
+                    .select('*, delivery_order:delivery_orders(do_number)')
+                    .eq('invoice_id', id)
+                    .order('section_number');
+
+                if (sectionsError) console.error('Error fetching DO sections:', sectionsError);
+                setDoSections(sectionsData || []);
+            }
 
             // Fetch Company Info (Assuming single company for now)
             const { data: companyData, error: companyError } = await supabase
@@ -136,6 +149,7 @@ export const ViewInvoice = () => {
                         invoice={invoice}
                         customer={customer}
                         items={items}
+                        doSections={doSections}
                         company={company}
                         bankAccounts={bankAccounts}
                     />

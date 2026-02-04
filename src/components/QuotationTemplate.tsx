@@ -109,7 +109,7 @@ export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplatePro
 
                 {/* Table Header - Matches Image 1 */}
                 <div className="font-semibold mb-1">
-                    A ) To Supply Labor and Material and Transportation For... (Dynamic based on subject?)
+                    A ) {quotation.subject || 'To Supply Labor and Material...'}
                 </div>
 
                 <table className="w-full border-collapse border border-black mb-4 text-xs">
