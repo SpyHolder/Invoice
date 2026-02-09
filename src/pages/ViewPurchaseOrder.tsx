@@ -60,7 +60,7 @@ export const ViewPurchaseOrder = () => {
             const { data: itemsData, error: itemsError } = await supabase
                 .from('purchase_order_items')
                 .select('*')
-                .eq('purchase_order_id', id);
+                .eq('po_id', id);
 
             if (itemsError) throw itemsError;
             setItems(itemsData || []);

@@ -6,6 +6,8 @@ import { supabase, Invoice } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../contexts/ToastContext';
+import { Badge } from '../components/ui/Badge';
+import { SearchInput } from '../components/ui/SearchInput';
 
 export const Invoices = () => {
     const { user } = useAuth();
@@ -13,21 +15,29 @@ export const Invoices = () => {
     const { showToast } = useToast();
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [loading, setLoading] = useState(true);
+    const [searchQuery, setSearchQuery] = useState('');
 
     useEffect(() => {
         fetchInvoices();
-    }, [user]);
+    }, [user, searchQuery]);
 
     const fetchInvoices = async () => {
         if (!user) return;
+        setLoading(true);
 
-        const { data, error } = await supabase
+        const query = supabase
             .from('invoices')
             .select(`
         *,
         customer:partners!customer_id(company_name)
       `)
             .order('created_at', { ascending: false });
+
+        if (searchQuery) {
+            query.ilike('invoice_number', `%${searchQuery}%`);
+        }
+
+        const { data, error } = await query;
 
         if (!error && data) {
             setInvoices(data as Invoice[]);
@@ -63,72 +73,115 @@ export const Invoices = () => {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>
                     <p className="text-gray-600 mt-1">Manage your sales invoices</p>
                 </div>
-                <Button onClick={() => navigate('/invoices/new')}>
-                    <Plus className="w-4 h-4" />
-                    Create Invoice
-                </Button>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <SearchInput
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search invoices..."
+                        className="w-full sm:w-64"
+                    />
+                    <Button onClick={() => navigate('/invoices/new')}>
+                        <Plus className="w-4 h-4" />
+                        <span className="hidden sm:inline ml-2">Create Invoice</span>
+                        <span className="sm:hidden ml-2">New</span>
+                    </Button>
+                </div>
             </div>
 
             <Card>
                 {loading ? (
-                    <p className="text-center py-8 text-gray-500">Loading...</p>
-                ) : invoices.length === 0 ? (
                     <div className="text-center py-12">
-                        <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                        <p className="text-gray-600">No invoices yet. Create your first invoice!</p>
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                        <p className="text-gray-500">Loading invoices...</p>
+                    </div>
+                ) : invoices.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center text-center py-12">
+                        <div className="bg-gray-50 rounded-full w-16 h-16 flex items-center justify-center mb-4">
+                            <FileText className="w-8 h-8 text-gray-400" />
+                        </div>
+                        <h3 className="text-lg font-medium text-gray-900 mb-1">No invoices found</h3>
+                        <p className="text-gray-500 mb-6">Create your first invoice to get started.</p>
+                        <Button onClick={() => navigate('/invoices/new')}>
+                            <Plus className="w-4 h-4 mr-2" />
+                            Create Invoice
+                        </Button>
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
-                        <table className="table">
+                        <table className="w-full">
                             <thead>
-                                <tr>
-                                    <th>Customer</th>
-                                    <th>Date</th>
-                                    <th>Due Date</th>
-                                    <th>Amount</th>
-                                    <th>Actions</th>
+                                <tr className="border-b border-gray-200 bg-gray-50/50">
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Invoice #</th>
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Customer</th>
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Date</th>
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Due Date</th>
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Amount</th>
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Status</th>
+                                    <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody className="divide-y divide-gray-100">
                                 {invoices.map((invoice) => (
-                                    <tr key={invoice.id}>
-                                        <td className="font-medium">{invoice.customer?.company_name}</td>
-                                        <td>{new Date(invoice.date).toLocaleDateString()}</td>
-                                        <td>{invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : '-'}</td>
-                                        <td>${invoice.grand_total?.toFixed(2) || '0.00'}</td>
-                                        <td>
-                                            <div className="flex gap-2">
+                                    <tr key={invoice.id} className="hover:bg-gray-50/50 transition-colors">
+                                        <td className="py-3 px-4">
+                                            <span
+                                                className="font-medium text-blue-600 hover:text-blue-800 cursor-pointer"
+                                                onClick={() => navigate(`/invoices/${invoice.id}`)}
+                                            >
+                                                {invoice.invoice_number}
+                                            </span>
+                                        </td>
+                                        <td className="py-3 px-4">
+                                            <span className="font-medium text-gray-900">{invoice.customer?.company_name}</span>
+                                        </td>
+                                        <td className="py-3 px-4 text-sm text-gray-600">
+                                            {new Date(invoice.date).toLocaleDateString()}
+                                        </td>
+                                        <td className="py-3 px-4 text-sm text-gray-600">
+                                            {invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : '-'}
+                                        </td>
+                                        <td className="py-3 px-4 font-medium text-gray-900">
+                                            ${invoice.grand_total?.toFixed(2) || '0.00'}
+                                        </td>
+                                        <td className="py-3 px-4">
+                                            <button
+                                                onClick={() => toggleStatus(invoice)}
+                                                className="focus:outline-none"
+                                            >
+                                                <Badge
+                                                    variant={
+                                                        invoice.payment_status === 'paid' ? 'success' :
+                                                            invoice.payment_status === 'partial' ? 'warning' : 'danger'
+                                                    }
+                                                >
+                                                    {invoice.payment_status ? invoice.payment_status.toUpperCase() : 'UNKNOWN'}
+                                                </Badge>
+                                            </button>
+                                        </td>
+                                        <td className="py-3 px-4 text-right">
+                                            <div className="flex justify-end gap-2">
                                                 <button
                                                     onClick={() => navigate(`/invoices/${invoice.id}`)}
-                                                    className="text-blue-600 hover:text-blue-800"
+                                                    className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
                                                     title="View Invoice"
                                                 >
                                                     <Eye className="w-4 h-4" />
                                                 </button>
                                                 <button
                                                     onClick={() => navigate(`/invoices/edit/${invoice.id}`)}
-                                                    className="text-green-600 hover:text-green-800"
+                                                    className="p-1 text-gray-400 hover:text-green-600 transition-colors"
                                                     title="Edit Invoice"
                                                 >
                                                     <Edit2 className="w-4 h-4" />
                                                 </button>
                                                 <button
-                                                    onClick={() => toggleStatus(invoice)}
-                                                    className={`px-3 py-1 rounded-full text-sm ${invoice.payment_status === 'paid' ? 'bg-green-100 text-green-800' :
-                                                            invoice.payment_status === 'partial' ? 'bg-yellow-100 text-yellow-800' :
-                                                                'bg-red-100 text-red-800'
-                                                        }`}
-                                                >
-                                                    {invoice.payment_status}
-                                                </button>
-                                                <button
                                                     onClick={() => handleDelete(invoice.id)}
-                                                    className="text-red-600 hover:text-red-800"
+                                                    className="p-1 text-gray-400 hover:text-red-600 transition-colors"
                                                     title="Delete Invoice"
                                                 >
                                                     <Trash2 className="w-4 h-4" />

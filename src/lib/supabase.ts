@@ -105,6 +105,8 @@ export interface SalesOrderItem {
     quantity: number;
     uom: string | null;
     phase_name: string | null; // e.g. "01 Phase", "02 Phase"
+    qty_backordered: number;   // Quantity that needs procurement
+    qty_reserved: number;      // Quantity reserved from existing stock
 }
 
 export interface DeliveryOrder {
@@ -193,6 +195,8 @@ export interface PurchaseOrder {
     delivery_address: string | null; // "Working Site Address"
     notes?: string | null;
     status: string;
+    subtotal: number;  // Subtotal before tax
+    tax: number;       // GST amount
     total: number;
     vendor_name?: string; // Helper for display
     vendor?: Partner;
@@ -201,7 +205,7 @@ export interface PurchaseOrder {
 
 export interface PurchaseOrderItem {
     id: string;
-    purchase_order_id: string;
+    po_id: string;
     item_id?: string | null;
     item_code: string | null; // HW-QNO...
     description: string | null;

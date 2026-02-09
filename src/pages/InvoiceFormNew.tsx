@@ -95,9 +95,8 @@ export const InvoiceFormNew = () => {
     }, []);
 
     // ---------------------------------------------------------------
-    // FIX 2: fetchDeliveryOrders tidak lagi mengambil `selectedDOs`
-    // dari closure. Parameter `autoSelect` dikirim dari caller untuk
-    // menentukan apakah semua DO harus di-auto-select.
+    // FIX 2: fetchDeliveryOrders filters for delivered DOs only
+    // and excludes already-invoiced DOs to prevent double billing.
     // ---------------------------------------------------------------
     const fetchDeliveryOrders = useCallback(async (soId: string, autoSelect = false) => {
         if (!soId) {
@@ -105,17 +104,28 @@ export const InvoiceFormNew = () => {
             return;
         }
 
+        // Fetch only delivered DOs
         const { data } = await supabase
             .from('delivery_orders')
             .select('*')
             .eq('so_id', soId)
+            .eq('status', 'delivered')
             .order('created_at');
 
         if (data) {
-            setDeliveryOrders(data);
+            // Get already-invoiced DO IDs to exclude (prevent double billing)
+            const { data: invoicedSections } = await supabase
+                .from('invoice_delivery_sections')
+                .select('do_id');
 
-            if (autoSelect) {
-                const doIds = data.map(d => d.id).filter(Boolean);
+            const invoicedDoIds = new Set(invoicedSections?.map(s => s.do_id) || []);
+
+            // Filter out already-invoiced DOs
+            const unbilledDOs = data.filter(d => !invoicedDoIds.has(d.id));
+            setDeliveryOrders(unbilledDOs);
+
+            if (autoSelect && unbilledDOs.length > 0) {
+                const doIds = unbilledDOs.map(d => d.id).filter(Boolean);
                 setSelectedDOs(doIds);
                 await updatePreview(doIds);
             }

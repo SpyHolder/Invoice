@@ -451,208 +451,252 @@ export const InvoiceForm = () => {
 
             <form onSubmit={handleSubmit} className="space-y-6">
                 <Card>
-                    <h2 className="text-xl font-semibold mb-4">Invoice Details</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
+                        <span className="w-1 h-6 bg-blue-600 rounded-full"></span>
+                        Invoice Details
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
-                            <select
-                                value={formData.customer_id}
-                                onChange={(e) => handleCustomerChange(e.target.value)}
-                                className="input w-full bg-white"
-                                required
-                            >
-                                <option value="">Select Customer...</option>
-                                {customers.map(c => (
-                                    <option key={c.id} value={c.id}>{c.company_name}</option>
-                                ))}
-                            </select>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Customer <span className="text-red-500">*</span></label>
+                            <div className="relative">
+                                <select
+                                    value={formData.customer_id}
+                                    onChange={(e) => handleCustomerChange(e.target.value)}
+                                    className="w-full pl-3 pr-8 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none disabled:bg-gray-100 disabled:text-gray-500"
+                                    required
+                                    disabled={loading}
+                                >
+                                    <option value="">Select Customer...</option>
+                                    {customers.map(c => (
+                                        <option key={c.id} value={c.id}>{c.company_name}</option>
+                                    ))}
+                                </select>
+                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                                </div>
+                            </div>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Linked Sales Order (Optional)</label>
-                            <select
-                                value={formData.so_id}
-                                onChange={(e) => handleSOSelection(e.target.value)}
-                                className="input w-full bg-white"
-                            >
-                                <option value="">Select SO...</option>
-                                {salesOrders.map(so => (
-                                    <option key={so.id} value={so.id}>{so.so_number} - {so.quotations?.subject}</option>
-                                ))}
-                            </select>
+                            <div className="relative">
+                                <select
+                                    value={formData.so_id}
+                                    onChange={(e) => handleSOSelection(e.target.value)}
+                                    className="w-full pl-3 pr-8 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none disabled:bg-gray-100 disabled:text-gray-500"
+                                    disabled={loading}
+                                >
+                                    <option value="">Select SO...</option>
+                                    {salesOrders.map(so => (
+                                        <option key={so.id} value={so.id}>{so.so_number} - {so.quotations?.subject}</option>
+                                    ))}
+                                </select>
+                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                                </div>
+                            </div>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                            <input type="date" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} className="input w-full bg-white" required />
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Date <span className="text-red-500">*</span></label>
+                            <input type="date" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
-                            <input type="date" value={formData.due_date} onChange={e => setFormData({ ...formData, due_date: e.target.value })} className="input w-full bg-white" required />
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Due Date <span className="text-red-500">*</span></label>
+                            <input type="date" value={formData.due_date} onChange={e => setFormData({ ...formData, due_date: e.target.value })} className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Terms</label>
-                            <input type="text" value={formData.terms} onChange={e => setFormData({ ...formData, terms: e.target.value })} className="input w-full bg-white" />
+                            <input type="text" value={formData.terms} onChange={e => setFormData({ ...formData, terms: e.target.value })} className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. 30 Days" />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
-                            <input type="text" value={formData.subject} onChange={e => setFormData({ ...formData, subject: e.target.value })} className="input w-full bg-white" />
+                            <input type="text" value={formData.subject} onChange={e => setFormData({ ...formData, subject: e.target.value })} className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. Invoice for Service" />
                         </div>
                     </div>
                 </Card>
 
                 <Card>
-                    <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-xl font-semibold">Billing Logic</h2>
-                        <div className="flex gap-4">
-                            <label className="flex items-center gap-2">
-                                <input
-                                    type="radio"
-                                    name="pricing_mode"
-                                    value="standard"
-                                    checked={formData.pricing_mode === 'standard'}
-                                    onChange={() => setFormData({ ...formData, pricing_mode: 'standard' })}
-                                />
+                    <div className="flex items-center justify-between mb-6">
+                        <h2 className="text-xl font-semibold flex items-center gap-2">
+                            <span className="w-1 h-6 bg-blue-600 rounded-full"></span>
+                            Billing & Items
+                        </h2>
+                        <div className="flex bg-gray-100 p-1 rounded-lg">
+                            <button
+                                type="button"
+                                onClick={() => setFormData({ ...formData, pricing_mode: 'standard' })}
+                                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${formData.pricing_mode === 'standard' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                            >
                                 Standard (Itemized)
-                            </label>
-                            <label className="flex items-center gap-2">
-                                <input
-                                    type="radio"
-                                    name="pricing_mode"
-                                    value="milestone"
-                                    checked={formData.pricing_mode === 'milestone'}
-                                    onChange={() => setFormData({ ...formData, pricing_mode: 'milestone' })}
-                                />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setFormData({ ...formData, pricing_mode: 'milestone' })}
+                                className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${formData.pricing_mode === 'milestone' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}
+                            >
                                 Progressive (Milestone)
-                            </label>
+                            </button>
                         </div>
                     </div>
 
                     {formData.pricing_mode === 'milestone' && (
-                        <div className="mb-6 p-4 bg-yellow-50 rounded border border-yellow-200">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="mb-6 p-6 bg-blue-50 rounded-xl border border-blue-100">
+                            <h3 className="text-sm font-semibold text-blue-900 mb-4 uppercase tracking-wider">Milestone Details</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Milestone Description</label>
+                                    <label className="block text-sm font-medium text-blue-900 mb-1">Milestone Description</label>
                                     <input
                                         type="text"
                                         value={formData.milestone_description}
                                         onChange={e => handleMilestoneGenerate('desc', e.target.value)}
                                         placeholder="e.g. Down Payment 30%"
-                                        className="input w-full"
+                                        className="w-full px-3 py-2 bg-white text-gray-900 border border-blue-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Amount to Bill</label>
-                                    <input
-                                        type="number"
-                                        value={formData.milestone_amount}
-                                        onChange={e => handleMilestoneGenerate('amt', e.target.value)}
-                                        className="input w-full"
-                                    />
+                                    <label className="block text-sm font-medium text-blue-900 mb-1">Amount to Bill</label>
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                                        <input
+                                            type="number"
+                                            value={formData.milestone_amount}
+                                            onChange={e => handleMilestoneGenerate('amt', e.target.value)}
+                                            className="w-full pl-6 pr-3 py-2 bg-white text-gray-900 border border-blue-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            step="0.01"
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     )}
 
                     {formData.pricing_mode === 'standard' && (
-                        <div className="mb-4">
-                            <Button type="button" onClick={() => setLineItems([...lineItems, { id: Date.now().toString(), item_code: '', item_id: '', description: '', quantity: 1, uom: 'EA', unit_price: 0, total_price: 0 }])} variant="secondary">
-                                <Plus className="w-4 h-4" /> Add Item
+                        <div className="mb-4 flex justify-end">
+                            <Button type="button" onClick={() => setLineItems([...lineItems, { id: Date.now().toString(), item_code: '', item_id: '', description: '', quantity: 1, uom: 'EA', unit_price: 0, total_price: 0 }])} variant="secondary" size="sm">
+                                <Plus className="w-4 h-4 mr-2" /> Add Item
                             </Button>
                         </div>
                     )}
 
-                    <table className="table w-full">
-                        <thead>
-                            <tr>
-                                <th>Ref/Code</th>
-                                <th>Description</th>
-                                <th className="w-20">Qty</th>
-                                <th className="w-20">UOM</th>
-                                <th className="w-32">Price</th>
-                                <th className="w-24">Total</th>
-                                {formData.pricing_mode === 'standard' && <th className="w-10"></th>}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {lineItems.map((item) => (
-                                <tr key={item.id} className={formData.pricing_mode === 'milestone' ? 'bg-gray-50' : ''}>
-                                    <td>
-                                        <input
-                                            type="text"
-                                            value={item.item_code}
-                                            onChange={e => handleLineItemChange(item.id, 'item_code', e.target.value)}
-                                            className="input w-full"
-                                            readOnly={formData.pricing_mode === 'milestone'}
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            type="text"
-                                            value={item.description}
-                                            onChange={e => handleLineItemChange(item.id, 'description', e.target.value)}
-                                            className="input w-full"
-                                            readOnly={formData.pricing_mode === 'milestone'}
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            type="number"
-                                            value={item.quantity}
-                                            onChange={e => handleLineItemChange(item.id, 'quantity', parseFloat(e.target.value))}
-                                            className="input w-full"
-                                            readOnly={formData.pricing_mode === 'milestone'}
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            type="text"
-                                            value={item.uom}
-                                            onChange={e => handleLineItemChange(item.id, 'uom', e.target.value)}
-                                            className="input w-full"
-                                            readOnly={formData.pricing_mode === 'milestone'}
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            type="number"
-                                            value={item.unit_price}
-                                            onChange={e => handleLineItemChange(item.id, 'unit_price', parseFloat(e.target.value))}
-                                            className="input w-full"
-                                            readOnly={formData.pricing_mode === 'milestone'}
-                                        />
-                                    </td>
-                                    <td>
-                                        <span className="font-bold">{item.quantity * item.unit_price}</span>
-                                    </td>
-                                    {formData.pricing_mode === 'standard' && (
-                                        <td>
-                                            <button type="button" onClick={() => setLineItems(lineItems.filter(i => i.id !== item.id))} className="text-red-500">
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
-                                        </td>
-                                    )}
+                    <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                        <table className="w-full">
+                            <thead>
+                                <tr className="bg-gray-50 border-b border-gray-200">
+                                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Ref/Code</th>
+                                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Qty</th>
+                                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">UOM</th>
+                                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Price</th>
+                                    <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Total</th>
+                                    {formData.pricing_mode === 'standard' && <th className="w-10"></th>}
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </Card>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200 bg-white">
+                                {lineItems.map((item) => (
+                                    <tr key={item.id} className={`group hover:bg-gray-50 transition-colors ${formData.pricing_mode === 'milestone' ? 'bg-gray-50' : ''}`}>
+                                        <td className="p-2">
+                                            <input
+                                                type="text"
+                                                value={item.item_code}
+                                                onChange={e => handleLineItemChange(item.id, 'item_code', e.target.value)}
+                                                className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
+                                                placeholder="Code"
+                                                readOnly={formData.pricing_mode === 'milestone'}
+                                            />
+                                        </td>
+                                        <td className="p-2">
+                                            <input
+                                                type="text"
+                                                value={item.description}
+                                                onChange={e => handleLineItemChange(item.id, 'description', e.target.value)}
+                                                className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
+                                                placeholder="Description"
+                                                readOnly={formData.pricing_mode === 'milestone'}
+                                            />
+                                        </td>
+                                        <td className="p-2">
+                                            <input
+                                                type="number"
+                                                value={item.quantity}
+                                                onChange={e => handleLineItemChange(item.id, 'quantity', parseFloat(e.target.value))}
+                                                className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                min="0"
+                                                readOnly={formData.pricing_mode === 'milestone'}
+                                            />
+                                        </td>
+                                        <td className="p-2">
+                                            <input
+                                                type="text"
+                                                value={item.uom}
+                                                onChange={e => handleLineItemChange(item.id, 'uom', e.target.value)}
+                                                className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                readOnly={formData.pricing_mode === 'milestone'}
+                                            />
+                                        </td>
+                                        <td className="p-2">
+                                            <div className="relative">
+                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                                                <input
+                                                    type="number"
+                                                    value={item.unit_price}
+                                                    onChange={e => handleLineItemChange(item.id, 'unit_price', parseFloat(e.target.value))}
+                                                    className="w-full pl-6 pr-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    step="0.01"
+                                                    readOnly={formData.pricing_mode === 'milestone'}
+                                                />
+                                            </div>
+                                        </td>
+                                        <td className="p-4 text-right font-medium text-gray-900">
+                                            ${(item.quantity * item.unit_price).toFixed(2)}
+                                        </td>
+                                        {formData.pricing_mode === 'standard' && (
+                                            <td className="p-2 text-center">
+                                                <button type="button" onClick={() => setLineItems(lineItems.filter(i => i.id !== item.id))} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </td>
+                                        )}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
 
-                <Card>
-                    <div className="flex flex-col items-end gap-2">
-                        <div className="flex justify-between w-64">
-                            <span>Subtotal:</span>
-                            <span className="font-bold">{vals.subtotal.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between w-64 items-center">
-                            <span>Global Discount:</span>
-                            <input type="number" value={formData.discount} onChange={e => setFormData({ ...formData, discount: parseFloat(e.target.value) })} className="input w-24 text-right" />
-                        </div>
-                        <div className="flex justify-between w-64 items-center">
-                            <span>GST (%):</span>
-                            <input type="number" value={formData.tax} onChange={e => setFormData({ ...formData, tax: parseFloat(e.target.value) })} className="input w-24 text-right" />
-                        </div>
-                        <div className="flex justify-between w-64 border-t pt-2">
-                            <span className="text-xl font-bold">Total:</span>
-                            <span className="text-xl font-bold">{vals.total.toFixed(2)}</span>
+                    <div className="flex flex-col items-end gap-2 mt-6">
+                        <div className="w-72 space-y-2">
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-gray-600">Subtotal:</span>
+                                <span className="font-semibold text-gray-900">${vals.subtotal.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-gray-600">Global Discount:</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-gray-400 text-xs">-$</span>
+                                    <input
+                                        type="number"
+                                        value={formData.discount}
+                                        onChange={e => setFormData({ ...formData, discount: parseFloat(e.target.value) || 0 })}
+                                        className="w-20 px-2 py-1 text-right text-sm border-b border-gray-300 focus:border-blue-500 focus:outline-none"
+                                        min="0"
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-gray-600">GST (%):</span>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="number"
+                                        value={formData.tax}
+                                        onChange={e => setFormData({ ...formData, tax: parseFloat(e.target.value) || 0 })}
+                                        className="w-16 px-2 py-1 text-right text-sm border-b border-gray-300 focus:border-blue-500 focus:outline-none"
+                                        min="0"
+                                    />
+                                    <span className="text-gray-400 text-xs">%</span>
+                                </div>
+                            </div>
+                            <div className="border-t border-gray-200 pt-3 mt-2 flex justify-between items-center">
+                                <span className="text-base font-bold text-gray-900">Total:</span>
+                                <span className="text-xl font-bold text-blue-600">${vals.total.toFixed(2)}</span>
+                            </div>
                         </div>
                     </div>
                 </Card>

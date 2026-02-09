@@ -378,171 +378,192 @@ export const QuotationForm = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Section 1: Basic Information - Priority */}
-                <Card className="border-l-4 border-l-blue-500">
-                    <div className="flex items-center gap-2 mb-4">
-                        <span className="bg-blue-500 text-white text-xs font-bold px-2 py-1 rounded">1</span>
-                        <h2 className="text-xl font-semibold">Basic Information</h2>
-                        <span className="text-xs text-gray-500 ml-2">Required</span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                <Card>
+                    <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
+                        <span className="w-1 h-6 bg-blue-600 rounded-full"></span>
+                        Basic Information
+                    </h2>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
                                 Customer <span className="text-red-500">*</span>
                             </label>
-                            <select
-                                value={formData.customer_id}
-                                onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
-                                className="input w-full bg-white"
-                                required
-                            >
-                                <option value="">Select Customer</option>
-                                {customers.map((customer) => (
-                                    <option key={customer.id} value={customer.id}>
-                                        {customer.company_name}
-                                    </option>
-                                ))}
-                            </select>
+                            <div className="relative">
+                                <select
+                                    value={formData.customer_id}
+                                    onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
+                                    className="w-full pl-4 pr-10 py-2.5 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none transition-all shadow-sm hover:border-blue-400"
+                                    required
+                                >
+                                    <option value="">Select Customer</option>
+                                    {customers.map((customer) => (
+                                        <option key={customer.id} value={customer.id}>
+                                            {customer.company_name}
+                                        </option>
+                                    ))}
+                                </select>
+                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
+                                    <ChevronDown className="w-4 h-4" />
+                                </div>
+                            </div>
                         </div>
-                        <div className="md:col-span-2">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Subject <span className="text-red-500">*</span>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                Subject
                             </label>
                             <input
                                 type="text"
                                 value={formData.subject}
                                 onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                                className="input w-full bg-white"
-                                required
-                                placeholder="To Supply Labor and Material..."
+                                className="w-full px-4 py-2.5 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm hover:border-blue-400 placeholder:text-gray-400"
+                                placeholder="e.g. Quotation for Project X"
                             />
                         </div>
+
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
                                 Date <span className="text-red-500">*</span>
                             </label>
-                            <input
-                                type="date"
-                                value={formData.date}
-                                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                                className="input w-full bg-white"
-                                required
-                            />
+                            <div className="relative">
+                                <input
+                                    type="date"
+                                    value={formData.date}
+                                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                                    className="w-full px-4 py-2.5 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm hover:border-blue-400"
+                                    required
+                                />
+                            </div>
                         </div>
+
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Valid Until</label>
-                            <input
-                                type="date"
-                                value={formData.valid_until}
-                                onChange={(e) => setFormData({ ...formData, valid_until: e.target.value })}
-                                className="input w-full bg-white"
-                            />
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                Valid Until
+                            </label>
+                            <div className="relative">
+                                <input
+                                    type="date"
+                                    value={formData.valid_until}
+                                    onChange={(e) => setFormData({ ...formData, valid_until: e.target.value })}
+                                    className="w-full px-4 py-2.5 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm hover:border-blue-400"
+                                />
+                            </div>
                         </div>
                     </div>
                 </Card>
 
-                {/* Section 2: Line Items */}
-                <Card className="border-l-4 border-l-green-500">
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-2">
-                            <span className="bg-green-500 text-white text-xs font-bold px-2 py-1 rounded">2</span>
-                            <h2 className="text-xl font-semibold">Line Items</h2>
-                        </div>
-                        <Button type="button" onClick={addLineItem} variant="secondary">
-                            <Plus className="w-4 h-4" />
+
+                <Card>
+                    <div className="flex items-center justify-between mb-6">
+                        <h2 className="text-xl font-semibold flex items-center gap-2">
+                            <span className="w-1 h-6 bg-blue-600 rounded-full"></span>
+                            Line Items
+                        </h2>
+                        <Button type="button" onClick={addLineItem} variant="secondary" size="sm">
+                            <Plus className="w-4 h-4 mr-2" />
                             Add Item
                         </Button>
                     </div>
 
                     <div className="overflow-x-auto">
-                        <table className="table">
+                        <table className="w-full">
                             <thead>
-                                <tr>
-                                    <th>Item Selection</th>
-                                    <th>Description</th>
-                                    <th>Qty</th>
-                                    <th>UOM</th>
-                                    <th>Unit Price</th>
-                                    <th>Disc %</th>
-                                    <th>Total</th>
-                                    <th>Action</th>
+                                <tr className="border-b border-gray-200 text-left">
+                                    <th className="py-3 px-2 text-sm font-medium text-gray-700 min-w-[200px]">Items</th>
+                                    <th className="py-3 px-2 text-sm font-medium text-gray-700 w-24">QTY</th>
+                                    <th className="py-3 px-2 text-sm font-medium text-gray-700 w-24">UOM</th>
+                                    <th className="py-3 px-2 text-sm font-medium text-gray-700 w-32">Price</th>
+                                    <th className="py-3 px-2 text-sm font-medium text-gray-700 w-24">Disc %</th>
+                                    <th className="py-3 px-2 text-sm font-medium text-gray-700 w-32 text-right">Total</th>
+                                    <th className="py-3 px-2 text-sm font-medium text-gray-700 w-10"></th>
                                 </tr>
                             </thead>
-                            <tbody>
+                            <tbody className="divide-y divide-gray-100">
                                 {lineItems.map((item) => (
-                                    <tr key={item.id}>
-                                        <td>
-                                            <select
-                                                value={item.item_id}
-                                                onChange={(e) => updateLineItem(item.id, 'item_id', e.target.value)}
-                                                className="input w-[150px] bg-white"
-                                            >
-                                                <option value="">Select...</option>
-                                                {items.map((i) => (
-                                                    <option key={i.id} value={i.id}>
-                                                        {i.name}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </td>
-                                        <td>
-                                            <input
-                                                type="text"
+                                    <tr key={item.id} className="group hover:bg-gray-50/50">
+                                        <td className="py-3 px-2 space-y-2">
+                                            <div className="relative">
+                                                <select
+                                                    value={item.item_id}
+                                                    onChange={(e) => updateLineItem(item.id, 'item_id', e.target.value)}
+                                                    className="w-full pl-3 pr-8 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
+                                                >
+                                                    <option value="">Select Item...</option>
+                                                    {items.map((i) => (
+                                                        <option key={i.id} value={i.id}>
+                                                            {i.name}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                            </div>
+                                            <textarea
                                                 value={item.item_description}
                                                 onChange={(e) => updateLineItem(item.id, 'item_description', e.target.value)}
-                                                className="input w-full min-w-[200px] bg-white"
+                                                className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px] resize-y"
+                                                placeholder="Description..."
                                                 required
                                             />
                                         </td>
-                                        <td>
+                                        <td className="py-3 px-2 align-top">
                                             <input
                                                 type="number"
                                                 value={item.quantity}
                                                 onChange={(e) => updateLineItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                                                className="input w-16 bg-white"
+                                                className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                 min="1"
                                                 required
                                             />
                                         </td>
-                                        <td>
-                                            <select
-                                                value={item.uom}
-                                                onChange={(e) => updateLineItem(item.id, 'uom', e.target.value)}
-                                                className="input w-16 bg-white"
-                                            >
-                                                <option value="EA">EA</option>
-                                                <option value="Lot">Lot</option>
-                                                <option value="Nos">Nos</option>
-                                                <option value="PCS">PCS</option>
-                                            </select>
+                                        <td className="py-3 px-2 align-top">
+                                            <div className="relative">
+                                                <select
+                                                    value={item.uom}
+                                                    onChange={(e) => updateLineItem(item.id, 'uom', e.target.value)}
+                                                    className="w-full pl-3 pr-8 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
+                                                >
+                                                    <option value="EA">EA</option>
+                                                    <option value="Lot">Lot</option>
+                                                    <option value="Nos">Nos</option>
+                                                    <option value="PCS">PCS</option>
+                                                </select>
+                                                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                            </div>
                                         </td>
-                                        <td>
-                                            <input
-                                                type="number"
-                                                value={item.unit_price}
-                                                onChange={(e) => updateLineItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                                                className="input w-24 bg-white"
-                                                step="0.01"
-                                                required
-                                            />
+                                        <td className="py-3 px-2 align-top">
+                                            <div className="relative">
+                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                                                <input
+                                                    type="number"
+                                                    value={item.unit_price}
+                                                    onChange={(e) => updateLineItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
+                                                    className="w-full pl-6 pr-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    step="0.01"
+                                                    required
+                                                />
+                                            </div>
                                         </td>
-                                        <td>
+                                        <td className="py-3 px-2 align-top">
                                             <input
                                                 type="number"
                                                 value={item.disc_percent}
                                                 onChange={(e) => updateLineItem(item.id, 'disc_percent', parseFloat(e.target.value) || 0)}
-                                                className="input w-16 bg-white"
+                                                className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                 step="0.01"
                                                 min="0"
                                                 max="100"
                                             />
                                         </td>
-                                        <td className="font-semibold">${item.total_price.toFixed(2)}</td>
-                                        <td>
+                                        <td className="py-3 px-2 align-top text-right font-medium text-gray-900">
+                                            ${item.total_price.toFixed(2)}
+                                        </td>
+                                        <td className="py-3 px-2 align-top text-right">
                                             <button
                                                 type="button"
                                                 onClick={() => removeLineItem(item.id)}
-                                                className="text-red-600 hover:text-red-800"
+                                                className="p-2 text-gray-400 hover:text-red-600 transition-colors rounded-lg hover:bg-red-50"
                                                 disabled={lineItems.length === 1}
                                             >
                                                 <Trash2 className="w-4 h-4" />
@@ -555,138 +576,126 @@ export const QuotationForm = () => {
                     </div>
                 </Card>
 
-                {/* Section 3: Budget Summary */}
-                <Card className="border-l-4 border-l-yellow-500">
-                    <div className="flex items-center gap-2 mb-4">
-                        <span className="bg-yellow-500 text-white text-xs font-bold px-2 py-1 rounded">3</span>
-                        <h2 className="text-xl font-semibold">Budget Summary</h2>
-                    </div>
-                    <div className="space-y-4 max-w-md ml-auto">
-                        <div className="flex justify-between items-center">
-                            <span className="text-gray-600">Scope Total:</span>
-                            <span className="font-semibold text-lg">${totals.subtotal.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between items-center gap-4">
-                            <label className="text-gray-600">Good Will Discount ($):</label>
-                            <input
-                                type="number"
-                                value={formData.discount_amount}
-                                onChange={(e) => setFormData({ ...formData, discount_amount: parseFloat(e.target.value) || 0 })}
-                                className="input w-32 bg-white"
-                                step="0.01"
-                                min="0"
-                            />
-                        </div>
-                        <div className="flex justify-between items-center gap-4">
-                            <label className="text-gray-600">GST Rate (%):</label>
-                            <input
-                                type="number"
-                                value={formData.gst_rate}
-                                onChange={(e) => setFormData({ ...formData, gst_rate: parseFloat(e.target.value) || 0 })}
-                                className="input w-32 bg-white"
-                                step="0.01"
-                                min="0"
-                            />
-                        </div>
-                        <div className="border-t pt-4 flex justify-between items-center">
-                            <span className="text-xl font-bold">Total Amount:</span>
-                            <span className="text-2xl font-bold text-blue-600">${totals.total.toFixed(2)}</span>
-                        </div>
-                    </div>
-                </Card>
+                <Card>
+                    <div className="flex flex-col md:flex-row gap-8">
+                        <div className="flex-1">
+                            <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
+                                <span className="w-1 h-6 bg-blue-600 rounded-full"></span>
+                                Terms & Conditions
+                            </h2>
+                            {availableTerms.length === 0 ? (
+                                <p className="text-gray-500 text-sm">No terms available.</p>
+                            ) : (
+                                <div className="space-y-3">
+                                    {TERM_CATEGORIES.map(category => {
+                                        const categoryTerms = termsByCategory[category] || [];
+                                        if (categoryTerms.length === 0) return null;
 
-                {/* Section 4: Terms & Conditions Selection */}
-                <Card className="border-l-4 border-l-purple-500">
-                    <div className="flex items-center gap-2 mb-4">
-                        <span className="bg-purple-500 text-white text-xs font-bold px-2 py-1 rounded">4</span>
-                        <h2 className="text-xl font-semibold">Terms & Conditions</h2>
-                        <span className="text-xs text-gray-500 ml-2">
-                            {selectedTermIds.length} of {availableTerms.length} selected
-                        </span>
-                    </div>
+                                        const isExpanded = expandedCategories.includes(category);
+                                        const selectedCount = categoryTerms.filter(t => selectedTermIds.includes(t.id)).length;
+                                        const allSelected = selectedCount === categoryTerms.length;
 
-                    {availableTerms.length === 0 ? (
-                        <div className="text-center py-8 text-gray-500">
-                            <p>No terms available. <a href="/terms" className="text-blue-600 hover:underline">Create terms first</a></p>
-                        </div>
-                    ) : (
-                        <div className="space-y-4">
-                            {TERM_CATEGORIES.map(category => {
-                                const categoryTerms = termsByCategory[category] || [];
-                                if (categoryTerms.length === 0) return null;
-
-                                const isExpanded = expandedCategories.includes(category);
-                                const selectedCount = categoryTerms.filter(t => selectedTermIds.includes(t.id)).length;
-                                const allSelected = selectedCount === categoryTerms.length;
-
-                                return (
-                                    <div key={category} className="border rounded-lg overflow-hidden">
-                                        <div
-                                            className="flex items-center justify-between p-3 bg-gray-50 cursor-pointer hover:bg-gray-100"
-                                            onClick={() => toggleCategory(category)}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                                                <span className="font-medium">{category}</span>
-                                                <span className="text-xs text-gray-500">
-                                                    ({selectedCount}/{categoryTerms.length})
-                                                </span>
-                                            </div>
-                                            <div className="flex gap-2" onClick={e => e.stopPropagation()}>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => allSelected ? deselectAllInCategory(category) : selectAllInCategory(category)}
-                                                    className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                        return (
+                                            <div key={category} className="border border-gray-200 rounded-lg overflow-hidden">
+                                                <div
+                                                    className="flex items-center justify-between p-3 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+                                                    onClick={() => toggleCategory(category)}
                                                 >
-                                                    {allSelected ? 'Deselect All' : 'Select All'}
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {isExpanded && (
-                                            <div className="p-3 space-y-2">
-                                                {categoryTerms.map(term => (
-                                                    <label
-                                                        key={term.id}
-                                                        className={`flex items-start gap-3 p-2 rounded cursor-pointer transition-colors ${selectedTermIds.includes(term.id)
-                                                                ? 'bg-blue-50 border border-blue-200'
-                                                                : 'hover:bg-gray-50 border border-transparent'
-                                                            }`}
+                                                    <div className="flex items-center gap-2">
+                                                        {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+                                                        <span className="font-medium text-sm text-gray-900">{category}</span>
+                                                        <span className="text-xs text-gray-500 bg-white px-1.5 py-0.5 rounded border border-gray-200">
+                                                            {selectedCount}/{categoryTerms.length}
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            allSelected ? deselectAllInCategory(category) : selectAllInCategory(category);
+                                                        }}
+                                                        className="text-xs font-medium text-blue-600 hover:text-blue-800"
                                                     >
-                                                        <div className="flex-shrink-0 mt-0.5">
-                                                            <div
-                                                                className={`w-5 h-5 rounded border-2 flex items-center justify-center ${selectedTermIds.includes(term.id)
-                                                                        ? 'bg-blue-600 border-blue-600 text-white'
-                                                                        : 'border-gray-300'
-                                                                    }`}
-                                                            >
-                                                                {selectedTermIds.includes(term.id) && <Check className="w-3 h-3" />}
+                                                        {allSelected ? 'None' : 'All'}
+                                                    </button>
+                                                </div>
+
+                                                {isExpanded && (
+                                                    <div className="p-3 space-y-2 bg-white border-t border-gray-100">
+                                                        {categoryTerms.map(term => (
+                                                            <div key={term.id} className="flex items-start gap-3 p-2 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer" onClick={() => toggleTerm(term.id)}>
+                                                                <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedTermIds.includes(term.id) ? 'bg-blue-600 border-blue-600' : 'border-gray-300 bg-white'}`}>
+                                                                    {selectedTermIds.includes(term.id) && <Check className="w-3 h-3 text-white" />}
+                                                                </div>
+                                                                <div className="text-sm">
+                                                                    {term.title && <span className="font-medium text-gray-900 block">{term.title}</span>}
+                                                                    <span className="text-gray-600 leading-relaxed text-xs">{term.content}</span>
+                                                                </div>
                                                             </div>
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={selectedTermIds.includes(term.id)}
-                                                                onChange={() => toggleTerm(term.id)}
-                                                                className="sr-only"
-                                                            />
-                                                        </div>
-                                                        <div className="flex-1 text-sm">
-                                                            {term.title && (
-                                                                <span className="font-medium text-gray-900">{term.title}: </span>
-                                                            )}
-                                                            <span className="text-gray-700 whitespace-pre-wrap">{term.content}</span>
-                                                        </div>
-                                                    </label>
-                                                ))}
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
-                    )}
+
+                        <div className="w-full md:w-80 space-y-6">
+                            <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
+                                <span className="w-1 h-6 bg-blue-600 rounded-full"></span>
+                                Summary
+                            </h2>
+
+                            <div className="bg-gray-50 rounded-lg p-6 space-y-4">
+                                <div className="flex justify-between items-center text-sm">
+                                    <span className="text-gray-600">Subtotal</span>
+                                    <span className="font-medium text-gray-900">${totals.subtotal.toFixed(2)}</span>
+                                </div>
+
+                                <div className="space-y-4 pt-4 border-t border-gray-200">
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-700 mb-1">Discount Amount ($)</label>
+                                        <input
+                                            type="number"
+                                            value={formData.discount_amount}
+                                            onChange={(e) => setFormData({ ...formData, discount_amount: parseFloat(e.target.value) || 0 })}
+                                            className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            min="0"
+                                            step="0.01"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-medium text-gray-700 mb-1">GST Rate (%)</label>
+                                        <input
+                                            type="number"
+                                            value={formData.gst_rate}
+                                            onChange={(e) => setFormData({ ...formData, gst_rate: parseFloat(e.target.value) || 0 })}
+                                            className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            min="0"
+                                            step="0.01"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="pt-4 border-t border-gray-200 space-y-2">
+                                    <div className="flex justify-between items-center text-sm">
+                                        <span className="text-gray-600">Tax ({formData.gst_rate}%)</span>
+                                        <span className="font-medium text-gray-900">${((totals.subtotal - formData.discount_amount) * (formData.gst_rate / 100)).toFixed(2)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-lg font-bold">
+                                        <span className="text-gray-900">Total</span>
+                                        <span className="text-blue-600">${totals.total.toFixed(2)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </Card>
 
-                <div className="flex gap-4 justify-end">
+                <div className="flex gap-4 justify-end pt-4">
                     <Button type="button" variant="secondary" onClick={() => navigate('/quotations')}>
                         Cancel
                     </Button>
@@ -695,6 +704,6 @@ export const QuotationForm = () => {
                     </Button>
                 </div>
             </form>
-        </div>
+        </div >
     );
 };

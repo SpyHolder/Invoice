@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Eye, Edit, FileText } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { SearchInput } from '../components/ui/SearchInput';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../contexts/ToastContext';
 
@@ -10,14 +11,17 @@ export const DeliveryOrders = () => {
     const navigate = useNavigate();
     const { showToast } = useToast();
     const [orders, setOrders] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [searchQuery, setSearchQuery] = useState('');
 
     useEffect(() => {
         fetchOrders();
-    }, []);
+    }, [searchQuery]);
 
     const fetchOrders = async () => {
+        setLoading(true);
         try {
-            const { data, error } = await supabase
+            let query = supabase
                 .from('delivery_orders')
                 .select(`
                     *,
@@ -32,15 +36,26 @@ export const DeliveryOrders = () => {
                 `)
                 .order('created_at', { ascending: false });
 
+            if (searchQuery) {
+                query = query.or(`do_number.ilike.%${searchQuery}%,subject.ilike.%${searchQuery}%`);
+            }
+
+            const { data, error } = await query;
+
             if (error) throw error;
             setOrders(data || []);
         } catch (error) {
             console.error('Error fetching DOs:', error);
+            showToast('Failed to fetch delivery orders', 'error');
+        } finally {
+            setLoading(false);
         }
     };
 
-    const updateStatus = async (doId: string, newStatus: string) => {
+    // When DO is delivered, increase stock (items successfully shipped means stock is back to available)
+    const updateStatus = async (doId: string, newStatus: string, previousStatus: string) => {
         try {
+            // Update DO status
             const { error } = await supabase
                 .from('delivery_orders')
                 .update({ status: newStatus })
@@ -48,7 +63,18 @@ export const DeliveryOrders = () => {
 
             if (error) throw error;
 
-            showToast(`Delivery Order status updated to ${newStatus}`, 'success');
+            // When marked as delivered, increase stock for delivered items
+            if (newStatus === 'delivered' && previousStatus !== 'delivered') {
+                await restoreStockForDO(doId);
+                showToast(`Delivery Order marked as delivered! Stock restored.`, 'success');
+            } else if (previousStatus === 'delivered' && newStatus !== 'delivered') {
+                // If reverting from delivered, we might want to deduct again
+                // For now just show a warning
+                showToast(`Delivery Order status updated to ${newStatus}. Note: Stock was previously restored.`, 'warning');
+            } else {
+                showToast(`Delivery Order status updated to ${newStatus}`, 'success');
+            }
+
             fetchOrders();
         } catch (error) {
             console.error('Error updating status:', error);
@@ -56,98 +82,151 @@ export const DeliveryOrders = () => {
         }
     };
 
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'delivered': return 'bg-green-100 text-green-800 border-green-300';
-            case 'cancelled': return 'bg-red-100 text-red-800 border-red-300';
-            default: return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+    // Restore/increase stock for DO items when delivered
+    const restoreStockForDO = async (doId: string) => {
+        try {
+            // Get DO items
+            const { data: doItems, error: doError } = await supabase
+                .from('delivery_order_items')
+                .select('description, quantity')
+                .eq('do_id', doId);
+
+            if (doError || !doItems) return;
+
+            for (const doItem of doItems) {
+                if (!doItem.description || !doItem.quantity) continue;
+
+                // Find matching inventory item by name
+                const { data: invItem } = await supabase
+                    .from('items')
+                    .select('id, stock, name')
+                    .ilike('name', `%${doItem.description}%`)
+                    .maybeSingle();
+
+                if (invItem) {
+                    // Increase stock
+                    const { error: updateError } = await supabase
+                        .from('items')
+                        .update({ stock: (invItem.stock || 0) + doItem.quantity })
+                        .eq('id', invItem.id);
+
+                    if (updateError) {
+                        console.error('Error updating stock for:', doItem.description);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error restoring stock for DO:', error);
         }
     };
 
+
+
     return (
         <div className="space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <h1 className="text-3xl font-bold text-gray-900">Delivery Orders</h1>
-                <Button onClick={() => navigate('/delivery-orders/new')}>
-                    <Plus className="w-4 h-4" /> Create Delivery Order
-                </Button>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <SearchInput
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search DO #, Subject..."
+                        className="w-full sm:w-64"
+                    />
+                    <Button onClick={() => navigate('/delivery-orders/new')}>
+                        <Plus className="w-4 h-4" /> Create Delivery Order
+                    </Button>
+                </div>
             </div>
 
             <Card>
-                <div className="overflow-x-auto">
-                    <table className="table w-full">
-                        <thead>
-                            <tr>
-                                <th className="text-left py-3 px-4">DO Number</th>
-                                <th className="text-left py-3 px-4">SO Ref</th>
-                                <th className="text-left py-3 px-4">Customer</th>
-                                <th className="text-left py-3 px-4">Date</th>
-                                <th className="text-left py-3 px-4">Subject</th>
-                                <th className="text-left py-3 px-4">Status</th>
-                                <th className="text-right py-3 px-4">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {orders.length === 0 ? (
-                                <tr>
-                                    <td colSpan={7} className="text-center py-8 text-gray-500">
-                                        No delivery orders found
-                                    </td>
+                {loading ? (
+                    <div className="text-center py-12">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                        <p className="text-gray-500">Loading delivery orders...</p>
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full">
+                            <thead>
+                                <tr className="border-b border-gray-200 bg-gray-50/50">
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">DO Number</th>
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">SO Ref</th>
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Customer</th>
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Date</th>
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Subject</th>
+                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Status</th>
+                                    <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">Actions</th>
                                 </tr>
-                            ) : (
-                                orders.map((doRecord) => (
-                                    <tr key={doRecord.id} className="border-t hover:bg-gray-50">
-                                        <td className="py-3 px-4 font-medium">{doRecord.do_number}</td>
-                                        <td className="py-3 px-4">{doRecord.sales_orders?.so_number || '-'}</td>
-                                        <td className="py-3 px-4">
-                                            {doRecord.sales_orders?.quotations?.partners?.company_name || '-'}
-                                        </td>
-                                        <td className="py-3 px-4">
-                                            {new Date(doRecord.date).toLocaleDateString()}
-                                        </td>
-                                        <td className="py-3 px-4">{doRecord.subject || '-'}</td>
-                                        <td className="py-3 px-4">
-                                            <select
-                                                value={doRecord.status || 'pending'}
-                                                onChange={(e) => updateStatus(doRecord.id, e.target.value)}
-                                                className={`px-2 py-1 rounded-lg text-xs font-semibold cursor-pointer border ${getStatusColor(doRecord.status || 'pending')}`}
-                                            >
-                                                <option value="pending">PENDING</option>
-                                                <option value="delivered">DELIVERED</option>
-                                                <option value="cancelled">CANCELLED</option>
-                                            </select>
-                                        </td>
-                                        <td className="py-3 px-4 text-right">
-                                            <div className="flex justify-end gap-2">
-                                                <button
-                                                    onClick={() => navigate(`/delivery-orders/${doRecord.id}`)}
-                                                    className="p-1 text-gray-600 hover:text-blue-600"
-                                                    title="View Details"
-                                                >
-                                                    <Eye className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={() => navigate(`/delivery-orders/edit/${doRecord.id}`)}
-                                                    className="p-1 text-gray-600 hover:text-orange-600"
-                                                    title="Edit"
-                                                >
-                                                    <Edit className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={() => navigate(`/invoices/new?so_id=${doRecord.so_id}`)}
-                                                    className="p-1 text-gray-600 hover:text-green-600"
-                                                    title="Create Invoice"
-                                                >
-                                                    <FileText className="w-4 h-4" />
-                                                </button>
-                                            </div>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {orders.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={7} className="text-center py-8 text-gray-500">
+                                            No delivery orders found
                                         </td>
                                     </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
+                                ) : (
+                                    orders.map((doRecord) => (
+                                        <tr key={doRecord.id} className="hover:bg-gray-50/50 transition-colors">
+                                            <td className="py-3 px-4 text-sm font-medium text-gray-900">{doRecord.do_number}</td>
+                                            <td className="py-3 px-4 text-sm text-gray-600">{doRecord.sales_orders?.so_number || '-'}</td>
+                                            <td className="py-3 px-4 text-sm text-gray-600">
+                                                {doRecord.sales_orders?.quotations?.partners?.company_name || '-'}
+                                            </td>
+                                            <td className="py-3 px-4 text-sm text-gray-600">
+                                                {new Date(doRecord.date).toLocaleDateString()}
+                                            </td>
+                                            <td className="py-3 px-4 text-sm text-gray-600">{doRecord.subject || '-'}</td>
+                                            <td className="py-3 px-4">
+                                                <select
+                                                    value={doRecord.status || 'pending'}
+                                                    onChange={(e) => updateStatus(doRecord.id, e.target.value, doRecord.status || 'pending')}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className={`px-2.5 py-1 rounded-full text-xs font-semibold cursor-pointer border-0 ring-1 ring-inset focus:ring-2 focus:ring-blue-500 outline-none ${doRecord.status === 'delivered'
+                                                        ? 'bg-green-50 text-green-700 ring-green-600/20'
+                                                        : doRecord.status === 'cancelled'
+                                                            ? 'bg-red-50 text-red-700 ring-red-600/20'
+                                                            : 'bg-yellow-50 text-yellow-800 ring-yellow-600/20'
+                                                        }`}
+                                                >
+                                                    <option value="pending">PENDING</option>
+                                                    <option value="delivered">DELIVERED</option>
+                                                    <option value="cancelled">CANCELLED</option>
+                                                </select>
+                                            </td>
+                                            <td className="py-3 px-4 text-right">
+                                                <div className="flex justify-end gap-2">
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); navigate(`/delivery-orders/${doRecord.id}`); }}
+                                                        className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                                                        title="View Details"
+                                                    >
+                                                        <Eye className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); navigate(`/delivery-orders/edit/${doRecord.id}`); }}
+                                                        className="p-1 text-gray-400 hover:text-orange-600 transition-colors"
+                                                        title="Edit"
+                                                    >
+                                                        <Edit className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); navigate(`/invoices/new?so_id=${doRecord.so_id}`); }}
+                                                        className="p-1 text-gray-400 hover:text-green-600 transition-colors"
+                                                        title="Create Invoice"
+                                                    >
+                                                        <FileText className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </Card>
         </div>
     );
