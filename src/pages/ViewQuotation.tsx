@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, FileCheck, Printer } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { supabase, Quotation, QuotationItem, Partner, Company } from '../lib/supabase';
+import { supabase, Quotation, QuotationItem, Partner, Company, QuotationTerm } from '../lib/supabase';
 import { QuotationTemplate } from '../components/QuotationTemplate';
 import { useReactToPrint } from 'react-to-print';
 
@@ -15,6 +15,7 @@ export const ViewQuotation = () => {
     const [customer, setCustomer] = useState<Partner | null>(null);
     const [items, setItems] = useState<QuotationItem[]>([]);
     const [company, setCompany] = useState<Company | undefined>(undefined);
+    const [selectedTerms, setSelectedTerms] = useState<QuotationTerm[]>([]);
     const [loading, setLoading] = useState(true);
 
     const handlePrint = useReactToPrint({
@@ -70,6 +71,29 @@ export const ViewQuotation = () => {
 
             if (companyData) setCompany(companyData);
 
+            // Fetch selected terms with their details
+            const { data: selectedTermsData, error: termsError } = await supabase
+                .from('quotation_selected_terms')
+                .select('term_id, quotation_terms(*)')
+                .eq('quotation_id', id);
+
+            if (!termsError && selectedTermsData) {
+                // Extract the terms from the joined data
+                const terms = selectedTermsData
+                    .map((st: any) => st.quotation_terms)
+                    .filter((t: QuotationTerm | null) => t !== null) as QuotationTerm[];
+
+                // Sort by category and sort_order
+                terms.sort((a, b) => {
+                    if (a.category !== b.category) {
+                        return a.category.localeCompare(b.category);
+                    }
+                    return a.sort_order - b.sort_order;
+                });
+
+                setSelectedTerms(terms);
+            }
+
         } catch (error) {
             console.error('Error fetching quotation:', error);
             alert('Failed to load quotation');
@@ -87,25 +111,13 @@ export const ViewQuotation = () => {
                 .from('invoices')
                 .insert([
                     {
-                        invoice_number: 'INV-' + Date.now(), // Should generate properly in real app
-                        so_id: null, // Ideally convert to SO first? logic says Quote -> SO -> Invoice. But user kept Convert logic?
-                        // If Quote -> SO -> Invoice, we should convert to SO here?
-                        // User Prompt: "After Quote is accepted, it becomes a Sales Order."
-                        // So updating this button to "Convert to Sales Order"?
-                        // For now let's keep it creating Invoice but note the gap, or change to Create SO.
-                        // I'll stick to creating Invoice for now to avoid breaking existing logic too much, 
-                        // BUT ideally it should be SO. 
-                        // Let's create an Invoice directly as a fallback if SO module isn't fully ready or for fast billing.
-                        // Wait, schema enforces `so_id` references `sales_orders(id)`.
-                        // Invoice table: `so_id` REFERENCES `sales_orders`.
-                        // It is nullable? `so_id uuid REFERENCES ...`. It's nullable by default unless NOT NULL specified.
-                        // Schema: `so_id uuid REFERENCES public.sales_orders(id)`. 
-
+                        invoice_number: 'INV-' + Date.now(),
+                        so_id: null,
                         date: new Date().toISOString().split('T')[0],
                         due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
                         payment_status: 'unpaid',
                         subtotal: quotation.subtotal,
-                        discount: quotation.total_amount ? (quotation.subtotal - quotation.total_amount) : 0, // Approx
+                        discount: quotation.total_amount ? (quotation.subtotal - quotation.total_amount) : 0,
                         grand_total: quotation.total_amount,
                         subject: quotation.subject,
                     },
@@ -118,7 +130,7 @@ export const ViewQuotation = () => {
             // Create invoice items
             const invoiceItems = items.map((item) => ({
                 invoice_id: newInvoice.id,
-                item_code: item.id.substring(0, 5), // Placeholder
+                item_code: item.id.substring(0, 5),
                 description: item.item_description,
                 quantity: item.quantity,
                 uom: item.uom,
@@ -188,6 +200,7 @@ export const ViewQuotation = () => {
                         customer={customer}
                         items={items}
                         company={company}
+                        selectedTerms={selectedTerms}
                     />
                 </div>
             </div>

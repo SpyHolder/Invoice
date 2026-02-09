@@ -48,13 +48,13 @@ export const Quotations = () => {
                 return;
             }
 
-            // Create Sales Order
+            // Create Sales Order with draft status (needs confirmation)
             const { data: newSO, error: soError } = await supabase
                 .from('sales_orders')
                 .insert([{
                     so_number: 'CNK-SO-' + Date.now(),
                     quotation_id: quotation.id,
-                    status: 'confirmed'
+                    status: 'draft'
                 }])
                 .select()
                 .single();
@@ -83,6 +83,12 @@ export const Quotations = () => {
                 showToast('Failed to create SO items', 'error');
                 return;
             }
+
+            // Update quotation status to 'converted'
+            await supabase
+                .from('quotations')
+                .update({ status: 'converted' })
+                .eq('id', quotation.id);
 
             showToast('Sales Order created successfully!', 'success');
             navigate(`/sales-orders/edit/${newSO.id}`);
@@ -153,8 +159,14 @@ export const Quotations = () => {
                                         <td>{quotation.validity_date ? new Date(quotation.validity_date).toLocaleDateString() : '-'}</td>
                                         <td>${(quotation.total_amount || quotation.total || 0).toFixed(2)}</td>
                                         <td>
-                                            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-                                                {quotation.status}
+                                            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${quotation.status === 'draft' ? 'bg-gray-100 text-gray-800' :
+                                                quotation.status === 'sent' ? 'bg-blue-100 text-blue-800' :
+                                                    quotation.status === 'accepted' ? 'bg-green-100 text-green-800' :
+                                                        quotation.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                                                            quotation.status === 'converted' ? 'bg-purple-100 text-purple-800' :
+                                                                'bg-gray-100 text-gray-800'
+                                                }`}>
+                                                {quotation.status?.toUpperCase() || 'DRAFT'}
                                             </span>
                                         </td>
                                         <td>

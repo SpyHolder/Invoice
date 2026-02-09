@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Eye, Edit } from 'lucide-react';
+import { Plus, Eye, Edit, CheckCircle } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { supabase } from '../lib/supabase';
+import { useToast } from '../contexts/ToastContext';
 
 export const SalesOrders = () => {
     const navigate = useNavigate();
+    const { showToast } = useToast();
     const [orders, setOrders] = useState<any[]>([]); // Using any for joined data convenience
 
     useEffect(() => {
@@ -15,11 +17,6 @@ export const SalesOrders = () => {
 
     const fetchOrders = async () => {
         try {
-            // Join with Quotations to get Customer? 
-            // Supabase client might not support deep joins in one query easily without type hacking or view.
-            // But we can fetch SOs and then fetch Quotes/Customers.
-            // Or just fetch SOs and `quotation_id`.
-
             const { data, error } = await supabase
                 .from('sales_orders')
                 .select(`
@@ -38,11 +35,29 @@ export const SalesOrders = () => {
         }
     };
 
+    const toggleStatus = async (so: any) => {
+        try {
+            const newStatus = so.status === 'confirmed' ? 'draft' : 'confirmed';
+            const { error } = await supabase
+                .from('sales_orders')
+                .update({ status: newStatus })
+                .eq('id', so.id);
+
+            if (error) throw error;
+
+            showToast(`Sales Order ${newStatus === 'confirmed' ? 'confirmed' : 'set to draft'}`, 'success');
+            fetchOrders();
+        } catch (error) {
+            console.error('Error updating status:', error);
+            showToast('Failed to update status', 'error');
+        }
+    };
+
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'draft': return 'bg-gray-100 text-gray-800';
-            case 'confirmed': return 'bg-blue-100 text-blue-800';
-            case 'completed': return 'bg-green-100 text-green-800';
+            case 'confirmed': return 'bg-green-100 text-green-800';
+            case 'completed': return 'bg-blue-100 text-blue-800';
             case 'cancelled': return 'bg-red-100 text-red-800';
             default: return 'bg-gray-100 text-gray-800';
         }
@@ -82,16 +97,20 @@ export const SalesOrders = () => {
                                     <tr key={so.id} className="border-t hover:bg-gray-50">
                                         <td className="py-3 px-4 font-medium">{so.so_number}</td>
                                         <td className="py-3 px-4">
-                                            {so.quotations?.partners?.company_name || '-'}
+                                            {so.quotations?.customer?.company_name || '-'}
                                         </td>
                                         <td className="py-3 px-4">{so.customer_po_number || '-'}</td>
                                         <td className="py-3 px-4">
                                             {new Date(so.project_schedule_date || so.created_at).toLocaleDateString()}
                                         </td>
                                         <td className="py-3 px-4">
-                                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getStatusColor(so.status)}`}>
-                                                {so.status.toUpperCase()}
-                                            </span>
+                                            <button
+                                                onClick={() => toggleStatus(so)}
+                                                className={`px-3 py-1 rounded-full text-xs font-semibold cursor-pointer hover:opacity-80 transition ${getStatusColor(so.status)}`}
+                                                title="Click to toggle status"
+                                            >
+                                                {so.status?.toUpperCase() || 'DRAFT'}
+                                            </button>
                                         </td>
                                         <td className="py-3 px-4 text-right">
                                             <div className="flex justify-end gap-2">
@@ -109,6 +128,15 @@ export const SalesOrders = () => {
                                                 >
                                                     <Edit className="w-4 h-4" />
                                                 </button>
+                                                {so.status === 'draft' && (
+                                                    <button
+                                                        onClick={() => toggleStatus(so)}
+                                                        className="p-1 text-gray-600 hover:text-green-600"
+                                                        title="Confirm Sales Order"
+                                                    >
+                                                        <CheckCircle className="w-4 h-4" />
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

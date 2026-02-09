@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Plus, Trash2, ArrowLeft } from 'lucide-react';
+import { Plus, Trash2, ArrowLeft, ChevronDown, ChevronUp, Check } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { supabase, Partner, Item } from '../lib/supabase';
+import { supabase, Partner, Item, QuotationTerm, TERM_CATEGORIES, TermCategory } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 
@@ -30,13 +30,16 @@ export const QuotationForm = () => {
     const [loading, setLoading] = useState(false);
     const [isEditMode, setIsEditMode] = useState(false);
 
+    // Available and selected terms
+    const [availableTerms, setAvailableTerms] = useState<QuotationTerm[]>([]);
+    const [selectedTermIds, setSelectedTermIds] = useState<string[]>([]);
+    const [expandedCategories, setExpandedCategories] = useState<TermCategory[]>([...TERM_CATEGORIES]);
+
     const [formData, setFormData] = useState({
         customer_id: '',
         date: new Date().toISOString().split('T')[0],
         valid_until: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         subject: '',
-        // notes: '', // removed
-        // payment_terms: '', // removed
         discount_amount: 0,
         gst_rate: 0,
     });
@@ -59,6 +62,7 @@ export const QuotationForm = () => {
     useEffect(() => {
         fetchCustomers();
         fetchItems();
+        fetchAvailableTerms();
         if (id) {
             setIsEditMode(true);
             loadQuotation(id);
@@ -73,6 +77,28 @@ export const QuotationForm = () => {
     const fetchItems = async () => {
         const { data } = await supabase.from('items').select('*').order('name');
         if (data) setItems(data);
+    };
+
+    const fetchAvailableTerms = async () => {
+        const { data, error } = await supabase
+            .from('quotation_terms')
+            .select('*')
+            .eq('is_active', true)
+            .order('category')
+            .order('sort_order');
+
+        if (error) {
+            console.error('Error fetching terms:', error);
+            return;
+        }
+
+        if (data) {
+            setAvailableTerms(data);
+            // By default, select all active terms for new quotations
+            if (!id) {
+                setSelectedTermIds(data.map(t => t.id));
+            }
+        }
     };
 
     const loadQuotation = async (quotationId: string) => {
@@ -93,28 +119,6 @@ export const QuotationForm = () => {
                     date: quotation.date,
                     valid_until: quotation.validity_date || '',
                     subject: quotation.subject || '',
-                    // notes: quotation.notes || '', // removed form schema
-                    // Wait, `quotations` table in `update_schema.sql` has:
-                    // quote_number, customer_id, date, validity_date, subject, subtotal, discount_amount, total_amount, gst_rate, status.
-                    // It does NOT have `notes`, `payment_terms`.
-                    // The previous schema had them.
-                    // If I removed them, I should remove them from form.
-                    // But Image 1 has "Budget Summary" which implies concise financial data, but usually quotes have T&C.
-                    // Let's assume `notes` might have been missed or not needed? Or maybe they are generic?
-                    // I will check `20260131100000_update_schema.sql` content again.
-                    // `CREATE TABLE IF NOT EXISTS public.quotations ... subject text ... status text`. 
-                    // No `notes` column. 
-                    // I will remove `notes` and `payment_terms` from form push to DB, or I should have added them.
-                    // Given strict requirements, I'll stick to what's defined.
-                    // However, `validity_date` is there.
-
-                    // Actually, I'll just keep them in state but not save them if they don't exist, OR I'll assume I should have added them.
-                    // For now, I'll remove them from saving logic if table doesn't have them.
-                    // But wait, `notes` allows "To Supply Labor..." description? No that's `subject`.
-                    // Okay, I'll use `subject` properly.
-
-                    // payment_terms removed
-                    // notes removed
                     discount_amount: quotation.discount_amount,
                     gst_rate: quotation.gst_rate,
                 });
@@ -130,9 +134,7 @@ export const QuotationForm = () => {
                 if (quotationItems && quotationItems.length > 0) {
                     const loadedItems = quotationItems.map((item, index) => ({
                         id: `loaded-${index}`,
-                        item_id: '', // no item_id in new schema items table relation? `quotation_items` has `item_description`. It does NOT have `item_id`.
-                        // So I can't link back to specific Item ID easily unless I stored it.
-                        // But I can pre-fill description.
+                        item_id: '',
                         item_name: '',
                         item_description: item.item_description || '',
                         quantity: item.quantity,
@@ -143,6 +145,18 @@ export const QuotationForm = () => {
                         total_price: item.total_price,
                     }));
                     setLineItems(loadedItems);
+                }
+
+                // Load selected terms
+                const { data: selectedTerms, error: termsError } = await supabase
+                    .from('quotation_selected_terms')
+                    .select('term_id')
+                    .eq('quotation_id', quotationId);
+
+                if (termsError) throw termsError;
+
+                if (selectedTerms) {
+                    setSelectedTermIds(selectedTerms.map(t => t.term_id));
                 }
             }
         } catch (error: any) {
@@ -196,20 +210,15 @@ export const QuotationForm = () => {
                     }
 
                     // Calculate totals
-                    // Logic: Total = (Qty * Price) - DiscountAmt?
-                    // Or if Disc % is used.
                     const gross = updated.quantity * updated.unit_price;
 
-                    // Priority: if field is disc_percent, calc disc_amount. If disc_amount, calc percent? 
-                    // Simplification: Let's assume disc_percent drives it for now, or just amount.
-                    // Let's support disc_percent logic.
                     if (field === 'disc_percent') {
                         updated.disc_amount = gross * (updated.disc_percent / 100);
                     } else if (field === 'quantity' || field === 'unit_price') {
                         updated.disc_amount = gross * (updated.disc_percent / 100);
                     }
 
-                    updated.total_price = gross - updated.disc_amount; // + GST? No, GST is usually on subtotal.
+                    updated.total_price = gross - updated.disc_amount;
 
                     return updated;
                 }
@@ -221,23 +230,42 @@ export const QuotationForm = () => {
     const calculateTotals = () => {
         let subtotal = 0;
         lineItems.forEach(item => {
-            // Wait, schema `total_price` in items row.
-            // Subtotal should be sum of item totals IF item discount is line-item based.
-            // BUT schema also has `discount_amount` on Header (Good Will Discount).
-            // So Subtotal = Sum of (Item Total Price)?
             subtotal += item.total_price;
         });
 
-        // Good will discount
         const headerDiscount = formData.discount_amount || 0;
-
-        // GST?
         const taxableAmount = subtotal - headerDiscount;
         const gstAmount = taxableAmount * (formData.gst_rate / 100);
-
         const total = taxableAmount + gstAmount;
 
         return { subtotal, headerDiscount, gstAmount, total };
+    };
+
+    // Terms selection handlers
+    const toggleTerm = (termId: string) => {
+        setSelectedTermIds(prev =>
+            prev.includes(termId)
+                ? prev.filter(id => id !== termId)
+                : [...prev, termId]
+        );
+    };
+
+    const toggleCategory = (category: TermCategory) => {
+        setExpandedCategories(prev =>
+            prev.includes(category)
+                ? prev.filter(c => c !== category)
+                : [...prev, category]
+        );
+    };
+
+    const selectAllInCategory = (category: TermCategory) => {
+        const categoryTermIds = availableTerms.filter(t => t.category === category).map(t => t.id);
+        setSelectedTermIds(prev => [...new Set([...prev, ...categoryTermIds])]);
+    };
+
+    const deselectAllInCategory = (category: TermCategory) => {
+        const categoryTermIds = availableTerms.filter(t => t.category === category).map(t => t.id);
+        setSelectedTermIds(prev => prev.filter(id => !categoryTermIds.includes(id)));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -254,10 +282,9 @@ export const QuotationForm = () => {
                 validity_date: formData.valid_until,
                 subject: formData.subject,
                 subtotal: totals.subtotal,
-                discount_amount: totals.headerDiscount, // Good will
+                discount_amount: totals.headerDiscount,
                 gst_rate: formData.gst_rate,
                 total_amount: totals.total,
-                // notes: formData.notes, // Removed from schema
             };
 
             let quotationId = id;
@@ -270,8 +297,10 @@ export const QuotationForm = () => {
                     .eq('id', id);
                 if (error) throw error;
 
-                // Delete items
+                // Delete existing items
                 await supabase.from('quotation_items').delete().eq('quotation_id', id);
+                // Delete existing selected terms
+                await supabase.from('quotation_selected_terms').delete().eq('quotation_id', id);
             } else {
                 // Create new
                 const { data, error: insertError } = await supabase
@@ -303,6 +332,16 @@ export const QuotationForm = () => {
 
                 const { error: itemsError } = await supabase.from('quotation_items').insert(itemsToInsert);
                 if (itemsError) throw itemsError;
+
+                // Insert selected terms
+                if (selectedTermIds.length > 0) {
+                    const termsToInsert = selectedTermIds.map(termId => ({
+                        quotation_id: quotationId,
+                        term_id: termId
+                    }));
+                    const { error: termsError } = await supabase.from('quotation_selected_terms').insert(termsToInsert);
+                    if (termsError) throw termsError;
+                }
             }
 
             showToast(`Quotation ${isEditMode ? 'updated' : 'created'} successfully!`, 'success');
@@ -317,6 +356,12 @@ export const QuotationForm = () => {
     };
 
     const totals = calculateTotals();
+
+    // Group terms by category
+    const termsByCategory = TERM_CATEGORIES.reduce((acc, category) => {
+        acc[category] = availableTerms.filter(t => t.category === category);
+        return acc;
+    }, {} as Record<TermCategory, QuotationTerm[]>);
 
     return (
         <div className="space-y-6">
@@ -333,11 +378,18 @@ export const QuotationForm = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
-                <Card>
-                    <h2 className="text-xl font-semibold mb-4">Quotation Information</h2>
+                {/* Section 1: Basic Information - Priority */}
+                <Card className="border-l-4 border-l-blue-500">
+                    <div className="flex items-center gap-2 mb-4">
+                        <span className="bg-blue-500 text-white text-xs font-bold px-2 py-1 rounded">1</span>
+                        <h2 className="text-xl font-semibold">Basic Information</h2>
+                        <span className="text-xs text-gray-500 ml-2">Required</span>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Customer *</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Customer <span className="text-red-500">*</span>
+                            </label>
                             <select
                                 value={formData.customer_id}
                                 onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
@@ -353,7 +405,9 @@ export const QuotationForm = () => {
                             </select>
                         </div>
                         <div className="md:col-span-2">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Subject *</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Subject <span className="text-red-500">*</span>
+                            </label>
                             <input
                                 type="text"
                                 value={formData.subject}
@@ -364,7 +418,9 @@ export const QuotationForm = () => {
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Date <span className="text-red-500">*</span>
+                            </label>
                             <input
                                 type="date"
                                 value={formData.date}
@@ -385,9 +441,13 @@ export const QuotationForm = () => {
                     </div>
                 </Card>
 
-                <Card>
+                {/* Section 2: Line Items */}
+                <Card className="border-l-4 border-l-green-500">
                     <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-xl font-semibold">Line Items</h2>
+                        <div className="flex items-center gap-2">
+                            <span className="bg-green-500 text-white text-xs font-bold px-2 py-1 rounded">2</span>
+                            <h2 className="text-xl font-semibold">Line Items</h2>
+                        </div>
                         <Button type="button" onClick={addLineItem} variant="secondary">
                             <Plus className="w-4 h-4" />
                             Add Item
@@ -398,7 +458,7 @@ export const QuotationForm = () => {
                         <table className="table">
                             <thead>
                                 <tr>
-                                    <th>Item Selection (Auto-fill)</th>
+                                    <th>Item Selection</th>
                                     <th>Description</th>
                                     <th>Qty</th>
                                     <th>UOM</th>
@@ -495,8 +555,12 @@ export const QuotationForm = () => {
                     </div>
                 </Card>
 
-                <Card>
-                    <h2 className="text-xl font-semibold mb-4">Budget Summary</h2>
+                {/* Section 3: Budget Summary */}
+                <Card className="border-l-4 border-l-yellow-500">
+                    <div className="flex items-center gap-2 mb-4">
+                        <span className="bg-yellow-500 text-white text-xs font-bold px-2 py-1 rounded">3</span>
+                        <h2 className="text-xl font-semibold">Budget Summary</h2>
+                    </div>
                     <div className="space-y-4 max-w-md ml-auto">
                         <div className="flex justify-between items-center">
                             <span className="text-gray-600">Scope Total:</span>
@@ -513,7 +577,6 @@ export const QuotationForm = () => {
                                 min="0"
                             />
                         </div>
-                        {/* GST Field if needed, defaulting to 0 as per requirements 'NO GST' */}
                         <div className="flex justify-between items-center gap-4">
                             <label className="text-gray-600">GST Rate (%):</label>
                             <input
@@ -530,6 +593,97 @@ export const QuotationForm = () => {
                             <span className="text-2xl font-bold text-blue-600">${totals.total.toFixed(2)}</span>
                         </div>
                     </div>
+                </Card>
+
+                {/* Section 4: Terms & Conditions Selection */}
+                <Card className="border-l-4 border-l-purple-500">
+                    <div className="flex items-center gap-2 mb-4">
+                        <span className="bg-purple-500 text-white text-xs font-bold px-2 py-1 rounded">4</span>
+                        <h2 className="text-xl font-semibold">Terms & Conditions</h2>
+                        <span className="text-xs text-gray-500 ml-2">
+                            {selectedTermIds.length} of {availableTerms.length} selected
+                        </span>
+                    </div>
+
+                    {availableTerms.length === 0 ? (
+                        <div className="text-center py-8 text-gray-500">
+                            <p>No terms available. <a href="/terms" className="text-blue-600 hover:underline">Create terms first</a></p>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {TERM_CATEGORIES.map(category => {
+                                const categoryTerms = termsByCategory[category] || [];
+                                if (categoryTerms.length === 0) return null;
+
+                                const isExpanded = expandedCategories.includes(category);
+                                const selectedCount = categoryTerms.filter(t => selectedTermIds.includes(t.id)).length;
+                                const allSelected = selectedCount === categoryTerms.length;
+
+                                return (
+                                    <div key={category} className="border rounded-lg overflow-hidden">
+                                        <div
+                                            className="flex items-center justify-between p-3 bg-gray-50 cursor-pointer hover:bg-gray-100"
+                                            onClick={() => toggleCategory(category)}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                                <span className="font-medium">{category}</span>
+                                                <span className="text-xs text-gray-500">
+                                                    ({selectedCount}/{categoryTerms.length})
+                                                </span>
+                                            </div>
+                                            <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => allSelected ? deselectAllInCategory(category) : selectAllInCategory(category)}
+                                                    className="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                                >
+                                                    {allSelected ? 'Deselect All' : 'Select All'}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {isExpanded && (
+                                            <div className="p-3 space-y-2">
+                                                {categoryTerms.map(term => (
+                                                    <label
+                                                        key={term.id}
+                                                        className={`flex items-start gap-3 p-2 rounded cursor-pointer transition-colors ${selectedTermIds.includes(term.id)
+                                                                ? 'bg-blue-50 border border-blue-200'
+                                                                : 'hover:bg-gray-50 border border-transparent'
+                                                            }`}
+                                                    >
+                                                        <div className="flex-shrink-0 mt-0.5">
+                                                            <div
+                                                                className={`w-5 h-5 rounded border-2 flex items-center justify-center ${selectedTermIds.includes(term.id)
+                                                                        ? 'bg-blue-600 border-blue-600 text-white'
+                                                                        : 'border-gray-300'
+                                                                    }`}
+                                                            >
+                                                                {selectedTermIds.includes(term.id) && <Check className="w-3 h-3" />}
+                                                            </div>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedTermIds.includes(term.id)}
+                                                                onChange={() => toggleTerm(term.id)}
+                                                                className="sr-only"
+                                                            />
+                                                        </div>
+                                                        <div className="flex-1 text-sm">
+                                                            {term.title && (
+                                                                <span className="font-medium text-gray-900">{term.title}: </span>
+                                                            )}
+                                                            <span className="text-gray-700 whitespace-pre-wrap">{term.content}</span>
+                                                        </div>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </Card>
 
                 <div className="flex gap-4 justify-end">

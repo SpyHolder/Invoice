@@ -23,10 +23,10 @@ export const Dashboard = () => {
                 // Fetch total revenue from paid invoices
                 const { data: paidInvoices } = await supabase
                     .from('invoices')
-                    .select('total')
-                    .eq('status', 'paid');
+                    .select('grand_total')
+                    .eq('payment_status', 'paid');
 
-                const totalRevenue = paidInvoices?.reduce((sum, inv) => sum + inv.total, 0) || 0;
+                const totalRevenue = paidInvoices?.reduce((sum, inv) => sum + (inv.grand_total || 0), 0) || 0;
 
                 // Fetch pending invoices count
                 const { count: pendingCount } = await supabase

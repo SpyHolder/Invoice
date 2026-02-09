@@ -49,7 +49,7 @@ export const InvoiceFormNew = () => {
         // Fetch all items from selected DOs
         const { data: allDOItems } = await supabase
             .from('delivery_order_items')
-            .select('*, delivery_orders(do_number)')
+            .select('*, delivery_orders(do_number, subject)')
             .in('do_id', doIds);
 
         if (!allDOItems) return;
@@ -78,6 +78,7 @@ export const InvoiceFormNew = () => {
                     section_number: idx + 1,
                     do_id: doId,
                     do_number: doInfo?.do_number || `DO ${idx + 1}`,
+                    subject: doInfo?.subject || '',
                     items: doItems.map(item => ({
                         item_code: item.item_code || '',
                         description: item.description || '',
@@ -339,7 +340,7 @@ export const InvoiceFormNew = () => {
                         <div>
                             <label className="block text-sm font-medium mb-2">Customer *</label>
                             <select
-                                className="w-full border rounded-lg p-2"
+                                className="w-full border border-gray-300 rounded-lg p-3 bg-white text-black focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                 value={formData.customer_id}
                                 onChange={(e) => handleCustomerChange(e.target.value)}
                                 required
@@ -356,7 +357,7 @@ export const InvoiceFormNew = () => {
                         <div>
                             <label className="block text-sm font-medium mb-2">Sales Order *</label>
                             <select
-                                className="w-full border rounded-lg p-2"
+                                className="w-full border border-gray-300 rounded-lg p-3 bg-white text-black focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                 value={formData.so_id}
                                 onChange={(e) => handleSOSelection(e.target.value)}
                                 required
@@ -417,7 +418,7 @@ export const InvoiceFormNew = () => {
                             <label className="block text-sm font-medium mb-2">Invoice Date *</label>
                             <input
                                 type="date"
-                                className="w-full border rounded-lg p-2"
+                                className="w-full border border-gray-300 rounded-lg p-3 bg-white text-black focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                 value={formData.date}
                                 onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                                 required
@@ -427,7 +428,7 @@ export const InvoiceFormNew = () => {
                             <label className="block text-sm font-medium mb-2">Due Date *</label>
                             <input
                                 type="date"
-                                className="w-full border rounded-lg p-2"
+                                className="w-full border border-gray-300 rounded-lg p-3 bg-white text-black focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                 value={formData.due_date}
                                 onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
                                 required
@@ -437,7 +438,7 @@ export const InvoiceFormNew = () => {
                             <label className="block text-sm font-medium mb-2">Payment Terms</label>
                             <input
                                 type="text"
-                                className="w-full border rounded-lg p-2"
+                                className="w-full border border-gray-300 rounded-lg p-3 bg-white text-black focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                 value={formData.terms}
                                 onChange={(e) => setFormData({ ...formData, terms: e.target.value })}
                                 placeholder="e.g., 30 Days, 60 Days"
@@ -449,7 +450,7 @@ export const InvoiceFormNew = () => {
                         <label className="block text-sm font-medium mb-2">Subject</label>
                         <input
                             type="text"
-                            className="w-full border rounded-lg p-2"
+                            className="w-full border border-gray-300 rounded-lg p-3 bg-white text-black focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                             value={formData.subject}
                             onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
                             placeholder="Invoice subject"
@@ -463,8 +464,20 @@ export const InvoiceFormNew = () => {
 
                             {previewItems.map((section) => (
                                 <div key={section.do_id} className="mb-6">
-                                    <div className="bg-blue-600 text-white px-3 py-2 rounded-t-lg font-medium">
-                                        Section {section.section_number} - {section.do_number}
+                                    <div className="bg-blue-600 text-white px-3 py-2 rounded-t-lg font-medium flex items-center gap-2">
+                                        <span>Subject:</span>
+                                        <input
+                                            type="text"
+                                            value={section.subject || ''}
+                                            onChange={(e) => {
+                                                const newItems = previewItems.map((s: any) =>
+                                                    s.do_id === section.do_id ? { ...s, subject: e.target.value } : s
+                                                );
+                                                setPreviewItems(newItems);
+                                            }}
+                                            className="flex-1 bg-blue-500 text-white placeholder-blue-200 border-b border-blue-300 focus:outline-none focus:border-white px-1"
+                                            placeholder="Enter subject for this section..."
+                                        />
                                     </div>
                                     <table className="w-full border border-t-0">
                                         <thead className="bg-gray-100">
@@ -503,7 +516,7 @@ export const InvoiceFormNew = () => {
                                     <span>Discount:</span>
                                     <input
                                         type="number"
-                                        className="w-32 border rounded p-1 text-right"
+                                        className="w-32 border border-gray-300 rounded-lg p-2 text-right bg-white text-black focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                         value={formData.discount}
                                         onChange={(e) => setFormData({ ...formData, discount: parseFloat(e.target.value) || 0 })}
                                         min="0"
@@ -514,7 +527,7 @@ export const InvoiceFormNew = () => {
                                     <span>GST (%):</span>
                                     <input
                                         type="number"
-                                        className="w-32 border rounded p-1 text-right"
+                                        className="w-32 border border-gray-300 rounded-lg p-2 text-right bg-white text-black focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                         value={formData.tax_rate}
                                         onChange={(e) => setFormData({ ...formData, tax_rate: parseFloat(e.target.value) || 0 })}
                                         min="0"

@@ -200,7 +200,11 @@ export const ViewSalesOrder = () => {
                         <div className="bg-white p-4 rounded-lg shadow-sm">
                             <p className="text-sm text-gray-600 mb-1">SO Total Value</p>
                             <p className="text-2xl font-bold text-gray-900">
-                                {billingSummary.so_total ? `$${billingSummary.so_total.toLocaleString()}` : 'Not Set'}
+                                {billingSummary.so_total
+                                    ? `$${billingSummary.so_total.toLocaleString()}`
+                                    : billingSummary.total_billed > 0
+                                        ? `$${billingSummary.total_billed.toLocaleString()} (from invoices)`
+                                        : 'Calculate from Quote'}
                             </p>
                         </div>
                         <div className="bg-white p-4 rounded-lg shadow-sm">

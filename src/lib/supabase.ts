@@ -113,6 +113,7 @@ export interface DeliveryOrder {
     so_id: string | null;
     date: string | null;
     subject?: string | null;  // Subject/description for DO
+    status?: string | null;   // pending, delivered, cancelled
     terms: string | null;
     requestor_name: string | null;
     shipping_address_snapshot: string | null;
@@ -208,3 +209,33 @@ export interface PurchaseOrderItem {
     unit_price: number;
     total: number;
 }
+
+// Quotation Terms & Conditions
+export interface QuotationTerm {
+    id: string;
+    category: string; // Remarks, Warranty, Cancellation, Payment Plan, General Terms
+    title: string | null;
+    content: string;
+    sort_order: number;
+    is_active: boolean;
+    created_at?: string;
+}
+
+export interface QuotationSelectedTerm {
+    id: string;
+    quotation_id: string;
+    term_id: string;
+    term?: QuotationTerm; // Helper for joins
+    created_at?: string;
+}
+
+// Term Categories constant for UI
+export const TERM_CATEGORIES = [
+    'Remarks',
+    'Warranty',
+    'Cancellation',
+    'Payment Plan',
+    'General Terms'
+] as const;
+
+export type TermCategory = typeof TERM_CATEGORIES[number];

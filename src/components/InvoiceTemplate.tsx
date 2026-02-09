@@ -154,11 +154,6 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
                     </div>
                 </div>
 
-                {/* Subject */}
-                <div className="mb-4">
-                    <span className="font-bold">Subject: </span>
-                    <span>{invoice.subject || 'service'}</span>
-                </div>
 
                 {/* Items Table - Image 2 Style */}
                 <table className="w-full border-collapse border border-black mb-4">
@@ -185,10 +180,10 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
 
                                 return (
                                     <React.Fragment key={section.id}>
-                                        {/* Section Header */}
+                                        {/* Section Header as Subject */}
                                         <tr className="bg-blue-100 border-b border-black">
                                             <td colSpan={7} className="p-2 font-bold text-blue-900">
-                                                {section.section_label || `Section ${section.section_number}`}
+                                                Subject: {section.section_label || `Delivery ${section.section_number}`}
                                             </td>
                                         </tr>
                                         {/* Section Items */}

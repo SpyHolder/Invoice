@@ -4,18 +4,18 @@ import { Plus, Eye, Edit, FileText } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { supabase } from '../lib/supabase';
+import { useToast } from '../contexts/ToastContext';
 
 export const DeliveryOrders = () => {
     const navigate = useNavigate();
+    const { showToast } = useToast();
     const [orders, setOrders] = useState<any[]>([]);
-    // const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         fetchOrders();
     }, []);
 
     const fetchOrders = async () => {
-        // setLoading(true);
         try {
             const { data, error } = await supabase
                 .from('delivery_orders')
@@ -36,8 +36,31 @@ export const DeliveryOrders = () => {
             setOrders(data || []);
         } catch (error) {
             console.error('Error fetching DOs:', error);
-        } finally {
-            // setLoading(false);
+        }
+    };
+
+    const updateStatus = async (doId: string, newStatus: string) => {
+        try {
+            const { error } = await supabase
+                .from('delivery_orders')
+                .update({ status: newStatus })
+                .eq('id', doId);
+
+            if (error) throw error;
+
+            showToast(`Delivery Order status updated to ${newStatus}`, 'success');
+            fetchOrders();
+        } catch (error) {
+            console.error('Error updating status:', error);
+            showToast('Failed to update status', 'error');
+        }
+    };
+
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'delivered': return 'bg-green-100 text-green-800 border-green-300';
+            case 'cancelled': return 'bg-red-100 text-red-800 border-red-300';
+            default: return 'bg-yellow-100 text-yellow-800 border-yellow-300';
         }
     };
 
@@ -60,13 +83,14 @@ export const DeliveryOrders = () => {
                                 <th className="text-left py-3 px-4">Customer</th>
                                 <th className="text-left py-3 px-4">Date</th>
                                 <th className="text-left py-3 px-4">Subject</th>
+                                <th className="text-left py-3 px-4">Status</th>
                                 <th className="text-right py-3 px-4">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {orders.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="text-center py-8 text-gray-500">
+                                    <td colSpan={7} className="text-center py-8 text-gray-500">
                                         No delivery orders found
                                     </td>
                                 </tr>
@@ -81,7 +105,18 @@ export const DeliveryOrders = () => {
                                         <td className="py-3 px-4">
                                             {new Date(doRecord.date).toLocaleDateString()}
                                         </td>
-                                        <td className="py-3 px-4">{doRecord.subject}</td>
+                                        <td className="py-3 px-4">{doRecord.subject || '-'}</td>
+                                        <td className="py-3 px-4">
+                                            <select
+                                                value={doRecord.status || 'pending'}
+                                                onChange={(e) => updateStatus(doRecord.id, e.target.value)}
+                                                className={`px-2 py-1 rounded-lg text-xs font-semibold cursor-pointer border ${getStatusColor(doRecord.status || 'pending')}`}
+                                            >
+                                                <option value="pending">PENDING</option>
+                                                <option value="delivered">DELIVERED</option>
+                                                <option value="cancelled">CANCELLED</option>
+                                            </select>
+                                        </td>
                                         <td className="py-3 px-4 text-right">
                                             <div className="flex justify-end gap-2">
                                                 <button

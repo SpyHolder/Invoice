@@ -26,6 +26,7 @@ import { ViewDeliveryOrder } from './pages/ViewDeliveryOrder';
 import { PurchaseOrders } from './pages/PurchaseOrders';
 import { PurchaseOrderForm } from './pages/PurchaseOrderForm';
 import { ViewPurchaseOrder } from './pages/ViewPurchaseOrder';
+import { TermsConditions } from './pages/TermsConditions';
 
 function App() {
     return (
@@ -275,6 +276,16 @@ function App() {
                                 <ProtectedRoute>
                                     <MainLayout>
                                         <ViewPurchaseOrder />
+                                    </MainLayout>
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/terms"
+                            element={
+                                <ProtectedRoute>
+                                    <MainLayout>
+                                        <TermsConditions />
                                     </MainLayout>
                                 </ProtectedRoute>
                             }

@@ -1,15 +1,26 @@
 import { forwardRef } from 'react';
-import { Quotation, QuotationItem, Partner, Company } from '../lib/supabase';
+import { Quotation, QuotationItem, Partner, Company, QuotationTerm, TERM_CATEGORIES, TermCategory } from '../lib/supabase';
 
 interface QuotationTemplateProps {
     quotation: Quotation;
     customer: Partner;
     items: QuotationItem[];
     company?: Company;
+    selectedTerms?: QuotationTerm[];
 }
 
+// Static Bank Details (CNK Bank Details)
+const BANK_DETAILS = {
+    bankName: 'UOB Serangoon Central',
+    bankAddress: 'No.23 Serangoon Central, #01-52/53 NEX, Singapore 556083',
+    accountNumber: '123456788',
+    swiftCode: 'UOVBSGSG',
+    branchCode: '65432343',
+    paynowUen: '202244240N'
+};
+
 export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplateProps>(
-    ({ quotation, customer, items, company }, ref) => {
+    ({ quotation, customer, items, company, selectedTerms = [] }, ref) => {
         const formatDate = (dateString: string) => {
             return new Date(dateString).toLocaleDateString('en-GB', {
                 day: 'numeric',
@@ -18,8 +29,11 @@ export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplatePro
             });
         };
 
-        // If items are not yet migrated to new structure, use fallbacks
-        // New structure: item_description, unit_price, disc_percent, disc_amount, total_price
+        // Group selected terms by category
+        const termsByCategory = TERM_CATEGORIES.reduce((acc, category) => {
+            acc[category] = selectedTerms.filter(t => t.category === category);
+            return acc;
+        }, {} as Record<TermCategory, QuotationTerm[]>);
 
         return (
             <div ref={ref} className="p-8 bg-white text-black font-sans text-sm h-full mx-auto" style={{ width: '210mm', minHeight: '297mm' }}>
@@ -48,7 +62,6 @@ export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplatePro
                             <div className="ml-2">
                                 <p className="font-bold">{customer.company_name}</p>
                                 <p>{customer.address}</p>
-                                {/* City/Zip if needed */}
                             </div>
                         </div>
                         <div className="flex mt-2">
@@ -128,8 +141,6 @@ export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplatePro
                     </thead>
                     <tbody>
                         {items.map((item, index) => {
-                            // const befDisc = (item.unit_price * item.quantity); 
-                            // Image 1: U/Price 10.00, Bef Disc 20.00 (Qty 2). So Bef Disc = Qty * Unit Price.
                             return (
                                 <tr key={item.id}>
                                     <td className="border border-black p-1 text-center">{index + 1}</td>
@@ -137,8 +148,7 @@ export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplatePro
                                     <td className="border border-black p-1 text-center">{item.quantity}</td>
                                     <td className="border border-black p-1 text-center">{item.uom || 'EA'}</td>
                                     <td className="border border-black p-1 text-right">{item.unit_price?.toFixed(2)}</td>
-                                    <td className="border border-black p-1 text-right">{items[index].quantity * items[index].unit_price}</td>
-                                    {/* Note: In Image 1, Bef Disc is 20.00 for 2 * 10.00. */}
+                                    <td className="border border-black p-1 text-right">{(items[index].quantity * items[index].unit_price).toFixed(2)}</td>
                                     <td className="border border-black p-1 text-center">{item.disc_percent || 0}</td>
                                     <td className="border border-black p-1 text-right">{item.disc_amount?.toFixed(2) || '0.00'}</td>
                                     <td className="border border-black p-1 text-right">{item.total_price?.toFixed(2)}</td>
@@ -181,6 +191,128 @@ export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplatePro
 
                 <div className="mt-8">
                     <p className="font-bold">* NO GST as {company?.name || 'CNK'} is NOT a GST Registered Company Yet</p>
+                </div>
+
+                {/* Page Break - Terms & Conditions always on new page */}
+                <div className="break-before-page" style={{ pageBreakBefore: 'always', breakBefore: 'page' }}></div>
+
+                {/* Terms & Conditions by Category - Page 2 */}
+                {selectedTerms.length > 0 && (
+                    <div className="text-xs mt-8">
+                        {/* Remarks */}
+                        {termsByCategory['Remarks']?.length > 0 && (
+                            <div className="mb-4">
+                                <p className="font-bold underline mb-1">Remarks:</p>
+                                <ul className="list-none space-y-1">
+                                    {termsByCategory['Remarks'].map((term) => (
+                                        <li key={term.id} className="flex">
+                                            <span className="mr-2">*</span>
+                                            <span>{term.title ? `${term.title}: ` : ''}{term.content}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+
+                        {/* Warranty */}
+                        {termsByCategory['Warranty']?.length > 0 && (
+                            <div className="mb-4">
+                                <p className="font-bold underline mb-1">WARRANTY:</p>
+                                <ul className="list-none space-y-1">
+                                    {termsByCategory['Warranty'].map((term) => (
+                                        <li key={term.id} className="flex">
+                                            <span className="mr-2">*</span>
+                                            <div>
+                                                {term.title && <span className="font-semibold">{term.title}</span>}
+                                                <span className="whitespace-pre-wrap">{term.title ? '\n' : ''}{term.content}</span>
+                                            </div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+
+                        {/* Cancellation */}
+                        {termsByCategory['Cancellation']?.length > 0 && (
+                            <div className="mb-4">
+                                <p className="font-bold underline mb-1">CANCELLATION:</p>
+                                <ul className="list-none space-y-1">
+                                    {termsByCategory['Cancellation'].map((term) => (
+                                        <li key={term.id} className="flex">
+                                            <span className="mr-2">*</span>
+                                            <span>{term.content}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+
+                        {/* Payment Plan */}
+                        {termsByCategory['Payment Plan']?.length > 0 && (
+                            <div className="mb-4">
+                                {termsByCategory['Payment Plan'].map((term) => (
+                                    <div key={term.id}>
+                                        {term.title && <p className="font-bold underline italic mb-1">{term.title}</p>}
+                                        <ul className="list-none space-y-0.5 ml-4">
+                                            {term.content.split('\n').map((line, i) => (
+                                                <li key={i} className="flex">
+                                                    <span className="mr-2">-</span>
+                                                    <span className="underline italic">{line}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* General Terms */}
+                        {termsByCategory['General Terms']?.length > 0 && (
+                            <div className="mb-4">
+                                <ul className="list-none space-y-1">
+                                    {termsByCategory['General Terms'].map((term) => (
+                                        <li key={term.id} className="flex">
+                                            <span className="mr-2">*</span>
+                                            <span>{term.content}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* CNK Bank Details (Static) */}
+                <div className="mt-8 text-xs">
+                    <p className="font-bold mb-2">CNK Bank Details</p>
+                    <table className="border-collapse border border-black">
+                        <tbody>
+                            <tr>
+                                <td className="border border-black p-1 w-48">Bank Name (Final Destination Bank)</td>
+                                <td className="border border-black p-1">{BANK_DETAILS.bankName}</td>
+                            </tr>
+                            <tr>
+                                <td className="border border-black p-1">Bank Address</td>
+                                <td className="border border-black p-1">{BANK_DETAILS.bankAddress}</td>
+                            </tr>
+                            <tr>
+                                <td className="border border-black p-1">Account Number</td>
+                                <td className="border border-black p-1">{BANK_DETAILS.accountNumber}</td>
+                            </tr>
+                            <tr>
+                                <td className="border border-black p-1">Swift Code (Non-US Bank)</td>
+                                <td className="border border-black p-1">{BANK_DETAILS.swiftCode}</td>
+                            </tr>
+                            <tr>
+                                <td className="border border-black p-1">Bank Key/Branch Code</td>
+                                <td className="border border-black p-1">{BANK_DETAILS.branchCode}</td>
+                            </tr>
+                            <tr>
+                                <td className="border border-black p-1">PayNow UEN</td>
+                                <td className="border border-black p-1">{BANK_DETAILS.paynowUen}</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         );
