@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Plus, Trash2, ArrowLeft, ChevronDown, ChevronUp, Check } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { supabase, Partner, Item, QuotationTerm, TERM_CATEGORIES, TermCategory } from '../lib/supabase';
+import { supabase, Partner, Item, QuotationTerm, TERM_CATEGORIES, TermCategoryName } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 
@@ -33,7 +33,7 @@ export const QuotationForm = () => {
     // Available and selected terms
     const [availableTerms, setAvailableTerms] = useState<QuotationTerm[]>([]);
     const [selectedTermIds, setSelectedTermIds] = useState<string[]>([]);
-    const [expandedCategories, setExpandedCategories] = useState<TermCategory[]>([...TERM_CATEGORIES]);
+    const [expandedCategories, setExpandedCategories] = useState<TermCategoryName[]>([...TERM_CATEGORIES]);
 
     const [formData, setFormData] = useState({
         customer_id: '',
@@ -254,7 +254,7 @@ export const QuotationForm = () => {
         );
     };
 
-    const toggleCategory = (category: TermCategory) => {
+    const toggleCategory = (category: TermCategoryName) => {
         setExpandedCategories(prev =>
             prev.includes(category)
                 ? prev.filter(c => c !== category)
@@ -262,12 +262,12 @@ export const QuotationForm = () => {
         );
     };
 
-    const selectAllInCategory = (category: TermCategory) => {
+    const selectAllInCategory = (category: TermCategoryName) => {
         const categoryTermIds = availableTerms.filter(t => t.category === category).map(t => t.id);
         setSelectedTermIds(prev => [...new Set([...prev, ...categoryTermIds])]);
     };
 
-    const deselectAllInCategory = (category: TermCategory) => {
+    const deselectAllInCategory = (category: TermCategoryName) => {
         const categoryTermIds = availableTerms.filter(t => t.category === category).map(t => t.id);
         setSelectedTermIds(prev => prev.filter(id => !categoryTermIds.includes(id)));
     };
@@ -369,7 +369,7 @@ export const QuotationForm = () => {
     const termsByCategory = TERM_CATEGORIES.reduce((acc, category) => {
         acc[category] = availableTerms.filter(t => t.category === category);
         return acc;
-    }, {} as Record<TermCategory, QuotationTerm[]>);
+    }, {} as Record<TermCategoryName, QuotationTerm[]>);
 
     return (
         <div className="space-y-6">

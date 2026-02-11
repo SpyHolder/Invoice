@@ -5,7 +5,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
-import { supabase, Item, Partner, QuotationTerm, TERM_CATEGORIES, TermCategory } from '../lib/supabase';
+import { supabase, Item, Partner, QuotationTerm, TERM_CATEGORIES, TermCategoryName } from '../lib/supabase';
 import { useToast } from '../contexts/ToastContext';
 import { getBacklogItems } from '../lib/stockService';
 
@@ -75,7 +75,7 @@ export const PurchaseOrderForm = () => {
     // Terms & Conditions state
     const [availableTerms, setAvailableTerms] = useState<QuotationTerm[]>([]);
     const [selectedTermIds, setSelectedTermIds] = useState<string[]>([]);
-    const [expandedCategories, setExpandedCategories] = useState<TermCategory[]>([...TERM_CATEGORIES]);
+    const [expandedCategories, setExpandedCategories] = useState<TermCategoryName[]>([...TERM_CATEGORIES]);
 
     useEffect(() => {
         fetchVendors();
@@ -128,7 +128,7 @@ export const PurchaseOrderForm = () => {
         );
     };
 
-    const toggleCategory = (category: TermCategory) => {
+    const toggleCategory = (category: TermCategoryName) => {
         setExpandedCategories(prev =>
             prev.includes(category)
                 ? prev.filter(c => c !== category)
@@ -136,12 +136,12 @@ export const PurchaseOrderForm = () => {
         );
     };
 
-    const selectAllInCategory = (category: TermCategory) => {
+    const selectAllInCategory = (category: TermCategoryName) => {
         const categoryTermIds = availableTerms.filter(t => t.category === category).map(t => t.id);
         setSelectedTermIds(prev => [...new Set([...prev, ...categoryTermIds])]);
     };
 
-    const deselectAllInCategory = (category: TermCategory) => {
+    const deselectAllInCategory = (category: TermCategoryName) => {
         const categoryTermIds = availableTerms.filter(t => t.category === category).map(t => t.id);
         setSelectedTermIds(prev => prev.filter(id => !categoryTermIds.includes(id)));
     };
@@ -150,7 +150,7 @@ export const PurchaseOrderForm = () => {
     const termsByCategory = TERM_CATEGORIES.reduce((acc, category) => {
         acc[category] = availableTerms.filter(t => t.category === category);
         return acc;
-    }, {} as Record<TermCategory, QuotationTerm[]>);
+    }, {} as Record<TermCategoryName, QuotationTerm[]>);
 
     const loadPurchaseOrder = async (poId: string) => {
         setLoading(true);

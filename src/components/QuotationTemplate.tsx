@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import { Quotation, QuotationItem, Partner, Company, QuotationTerm, TERM_CATEGORIES, TermCategory } from '../lib/supabase';
+import { Quotation, QuotationItem, Partner, Company, QuotationTerm, TERM_CATEGORIES, TermCategoryName } from '../lib/supabase';
 
 interface QuotationTemplateProps {
     quotation: Quotation;
@@ -33,7 +33,7 @@ export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplatePro
         const termsByCategory = TERM_CATEGORIES.reduce((acc, category) => {
             acc[category] = selectedTerms.filter(t => t.category === category);
             return acc;
-        }, {} as Record<TermCategory, QuotationTerm[]>);
+        }, {} as Record<TermCategoryName, QuotationTerm[]>);
 
         return (
             <div ref={ref} className="p-8 bg-white text-black font-sans text-sm h-full mx-auto" style={{ width: '210mm', minHeight: '297mm' }}>

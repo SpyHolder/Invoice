@@ -249,8 +249,8 @@ export interface QuotationSelectedTerm {
 }
 
 // Legacy: Term Categories constant for backward compatibility
-// NOTE: Categories are now fetched dynamically from the database
-// This constant is kept for fallback purposes only
+// NOTE: Categories should now be fetched dynamically from the database
+// This constant is kept for fallback/migration purposes only
 export const LEGACY_TERM_CATEGORIES = [
     'Remarks',
     'Warranty',
@@ -258,3 +258,7 @@ export const LEGACY_TERM_CATEGORIES = [
     'Payment Plan',
     'General Terms'
 ] as const;
+
+// Backward compatibility export - use TermCategory interface for new code
+export const TERM_CATEGORIES = LEGACY_TERM_CATEGORIES;
+export type TermCategoryName = typeof LEGACY_TERM_CATEGORIES[number];
