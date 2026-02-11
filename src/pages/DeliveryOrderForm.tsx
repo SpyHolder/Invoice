@@ -572,7 +572,7 @@ export const DeliveryOrderForm = () => {
                                                 onChange={(e) => {
                                                     if (e.target.value && currentQty > 0) {
                                                         handleAssignSOItemToGroup(soItem, e.target.value === '__ungrouped__' ? null : e.target.value, currentQty);
-                                                        setQtyInputs({ ...qtyInputs, [qtyKey]: Math.max(0, remaining - currentQty) });
+                                                        // Don't manually update qtyInputs - let remaining qty recalculate automatically
                                                         e.target.value = '';
                                                     }
                                                 }}

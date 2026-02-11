@@ -6,10 +6,12 @@ interface DeliveryOrderTemplateProps {
     customer: Partner;
     items: DeliveryOrderItem[];
     company?: Company;
+    customerPO?: string | null;
+    quoteRef?: string | null;
 }
 
 export const DeliveryOrderTemplate = forwardRef<HTMLDivElement, DeliveryOrderTemplateProps>(
-    ({ doData, customer, items, company }, ref) => {
+    ({ doData, customer, items, company, customerPO, quoteRef }, ref) => {
         // Extract ordinal suffix for DO date
         const getOrdinalSuffix = (day: number) => {
             if (day > 3 && day < 21) return 'th';
@@ -71,11 +73,11 @@ export const DeliveryOrderTemplate = forwardRef<HTMLDivElement, DeliveryOrderTem
                                 </tr>
                                 <tr>
                                     <th className="border border-black px-3 py-1 bg-gray-100 text-left whitespace-nowrap">Customer PO</th>
-                                    <td className="border border-black px-3 py-1">-</td>
+                                    <td className="border border-black px-3 py-1">{customerPO || '-'}</td>
                                 </tr>
                                 <tr>
                                     <th className="border border-black px-3 py-1 bg-gray-100 text-left whitespace-nowrap">Quote Ref</th>
-                                    <td className="border border-black px-3 py-1">-</td>
+                                    <td className="border border-black px-3 py-1">{quoteRef || '-'}</td>
                                 </tr>
                                 <tr>
                                     <th className="border border-black px-3 py-1 bg-gray-100 text-left whitespace-nowrap">Requestor</th>
@@ -129,7 +131,7 @@ export const DeliveryOrderTemplate = forwardRef<HTMLDivElement, DeliveryOrderTem
                     <thead>
                         <tr className="bg-gray-100">
                             <th className="border border-black p-2 text-center w-12">No</th>
-                            <th className="border border-black p-2 text-left w-32">Customer Items</th>
+                            <th className="border border-black p-2 text-left w-32">Items</th>
                             <th className="border border-black p-2 text-left">Description</th>
                             <th className="border border-black p-2 text-center w-16">QTY</th>
                             <th className="border border-black p-2 text-center w-16">UOM</th>
@@ -137,9 +139,9 @@ export const DeliveryOrderTemplate = forwardRef<HTMLDivElement, DeliveryOrderTem
                     </thead>
                     <tbody>
                         {(() => {
-                            // Group items by group_name (items code)
+                            // Group items by group_name
                             const grouped = items.reduce((acc, item) => {
-                                const groupKey = item.group_name || '__ungrouped__';
+                                const groupKey = item.group_name || item.item_code || '__ungrouped__';
                                 if (!acc[groupKey]) acc[groupKey] = [];
                                 acc[groupKey].push(item);
                                 return acc;
@@ -148,49 +150,28 @@ export const DeliveryOrderTemplate = forwardRef<HTMLDivElement, DeliveryOrderTem
                             let counter = 1;
                             const rows: JSX.Element[] = [];
 
-                            // Render grouped items with section headers
+                            // Render all groups with rowspan for Items column
                             Object.entries(grouped).forEach(([groupName, groupItems]) => {
-                                if (groupName !== '__ungrouped__') {
-                                    // Section header row
-                                    rows.push(
-                                        <tr key={`section-${groupName}`} className="bg-gray-200">
-                                            <td colSpan={5} className="border border-black p-2 font-bold">
-                                                Section dari DO-{doData.do_number}
-                                            </td>
-                                        </tr>
-                                    );
-
-                                    // Items in this section
-                                    groupItems.forEach((item, idx) => {
-                                        rows.push(
-                                            <tr key={item.id}>
-                                                <td className="border border-black p-2 text-center">{counter++}</td>
-                                                <td className="border border-black p-2 text-center">
-                                                    {idx === 0 ? groupName : ''}
-                                                </td>
-                                                <td className="border border-black p-2">{item.description}</td>
-                                                <td className="border border-black p-2 text-center">{item.quantity}</td>
-                                                <td className="border border-black p-2 text-center">{item.uom}</td>
-                                            </tr>
-                                        );
-                                    });
-                                }
-                            });
-
-                            // Render ungrouped items (no section header)
-                            if (grouped['__ungrouped__']) {
-                                grouped['__ungrouped__'].forEach((item) => {
+                                groupItems.forEach((item, idx) => {
                                     rows.push(
                                         <tr key={item.id}>
                                             <td className="border border-black p-2 text-center">{counter++}</td>
-                                            <td className="border border-black p-2 text-center"></td>
+                                            {/* Items column with rowspan on first row only */}
+                                            {idx === 0 && (
+                                                <td
+                                                    className="border border-black p-2 text-center"
+                                                    rowSpan={groupItems.length}
+                                                >
+                                                    {groupName !== '__ungrouped__' ? groupName : ''}
+                                                </td>
+                                            )}
                                             <td className="border border-black p-2">{item.description}</td>
                                             <td className="border border-black p-2 text-center">{item.quantity}</td>
                                             <td className="border border-black p-2 text-center">{item.uom}</td>
                                         </tr>
                                     );
                                 });
-                            }
+                            });
 
                             return rows;
                         })()}

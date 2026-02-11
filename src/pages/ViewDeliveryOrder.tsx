@@ -15,6 +15,8 @@ export const ViewDeliveryOrder = () => {
     const [customer, setCustomer] = useState<Partner | null>(null);
     const [items, setItems] = useState<DeliveryOrderItem[]>([]);
     const [company, setCompany] = useState<Company | undefined>(undefined);
+    const [customerPO, setCustomerPO] = useState<string | null>(null);
+    const [quoteRef, setQuoteRef] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
 
     const handlePrint = useReactToPrint({
@@ -46,14 +48,37 @@ export const ViewDeliveryOrder = () => {
             if (itemsError) throw itemsError;
             setItems(itemsData || []);
 
-            // Fetch Customer via SO -> Quotation
+            // Fetch Customer, Customer PO, and Quote Ref via SO -> Quotation
             if (doRecord.so_id) {
-                const { data: so } = await supabase.from('sales_orders').select('quotation_id').eq('id', doRecord.so_id).single();
-                if (so && so.quotation_id) {
-                    const { data: q } = await supabase.from('quotations').select('customer_id').eq('id', so.quotation_id).single();
-                    if (q) {
-                        const { data: cust } = await supabase.from('partners').select('*').eq('id', q.customer_id).single();
-                        if (cust) setCustomer(cust);
+                const { data: so } = await supabase
+                    .from('sales_orders')
+                    .select('quotation_id, customer_po_number')
+                    .eq('id', doRecord.so_id)
+                    .single();
+
+                if (so) {
+                    // Set Customer PO
+                    setCustomerPO(so.customer_po_number);
+
+                    if (so.quotation_id) {
+                        const { data: q } = await supabase
+                            .from('quotations')
+                            .select('customer_id, quote_number')
+                            .eq('id', so.quotation_id)
+                            .single();
+
+                        if (q) {
+                            // Set Quote Ref
+                            setQuoteRef(q.quote_number);
+
+                            // Fetch Customer
+                            const { data: cust } = await supabase
+                                .from('partners')
+                                .select('*')
+                                .eq('id', q.customer_id)
+                                .single();
+                            if (cust) setCustomer(cust);
+                        }
                     }
                 }
             } else {
@@ -110,6 +135,8 @@ export const ViewDeliveryOrder = () => {
                         customer={customer}
                         items={items}
                         company={company}
+                        customerPO={customerPO}
+                        quoteRef={quoteRef}
                     />
                 </div>
             </div>

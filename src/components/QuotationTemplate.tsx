@@ -86,12 +86,12 @@ export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplatePro
                         <div className="flex">
                             <span className="w-32">Contact</span>
                             <span>:</span>
-                            <span className="ml-2">{company?.phone || '085272124268'}</span>
+                            <span className="ml-2">{quotation.contact || company?.phone || '-'}</span>
                         </div>
                         <div className="flex">
                             <span className="w-32">RFQ Ref No</span>
                             <span>:</span>
-                            <span className="ml-2">{'RFQ - 55777'}</span>
+                            <span className="ml-2">{quotation.rfq_ref_no || '-'}</span>
                         </div>
                         <div className="flex">
                             <span className="w-32">Quote No</span>

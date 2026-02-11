@@ -17,6 +17,8 @@ export const ViewInvoice = () => {
     const [doSections, setDoSections] = useState<InvoiceDeliverySection[]>([]);
     const [company, setCompany] = useState<Company | undefined>(undefined);
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+    const [customerPO, setCustomerPO] = useState<string | null>(null);
+    const [doNumber, setDoNumber] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
 
     const handlePrint = useReactToPrint({
@@ -72,6 +74,30 @@ export const ViewInvoice = () => {
 
                 if (sectionsError) console.error('Error fetching DO sections:', sectionsError);
                 setDoSections(sectionsData || []);
+
+                // Collect all DO Numbers from sections
+                if (sectionsData && sectionsData.length > 0) {
+                    const doNumbers = sectionsData
+                        .map(section => section.delivery_order ? (section.delivery_order as any).do_number : null)
+                        .filter(num => num !== null);
+
+                    if (doNumbers.length > 0) {
+                        setDoNumber(doNumbers.join('\n'));
+                    }
+                }
+            }
+
+            // Fetch Customer PO from Sales Order
+            if (invoiceData.so_id) {
+                const { data: soData } = await supabase
+                    .from('sales_orders')
+                    .select('customer_po_number')
+                    .eq('id', invoiceData.so_id)
+                    .single();
+
+                if (soData) {
+                    setCustomerPO(soData.customer_po_number);
+                }
             }
 
             // Fetch Company Info (Assuming single company for now)
@@ -152,6 +178,8 @@ export const ViewInvoice = () => {
                         doSections={doSections}
                         company={company}
                         bankAccounts={bankAccounts}
+                        customerPO={customerPO}
+                        doNumber={doNumber}
                     />
                 </div>
             </div>

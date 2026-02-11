@@ -40,6 +40,8 @@ export const QuotationForm = () => {
         date: new Date().toISOString().split('T')[0],
         valid_until: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         subject: '',
+        contact: '',
+        rfq_ref_no: '',
         discount_amount: 0,
         gst_rate: 0,
     });
@@ -119,6 +121,8 @@ export const QuotationForm = () => {
                     date: quotation.date,
                     valid_until: quotation.validity_date || '',
                     subject: quotation.subject || '',
+                    contact: quotation.contact || '',
+                    rfq_ref_no: quotation.rfq_ref_no || '',
                     discount_amount: quotation.discount_amount,
                     gst_rate: quotation.gst_rate,
                 });
@@ -281,6 +285,8 @@ export const QuotationForm = () => {
                 date: formData.date,
                 validity_date: formData.valid_until,
                 subject: formData.subject,
+                contact: formData.contact,
+                rfq_ref_no: formData.rfq_ref_no,
                 subtotal: totals.subtotal,
                 discount_amount: totals.headerDiscount,
                 gst_rate: formData.gst_rate,
@@ -303,11 +309,13 @@ export const QuotationForm = () => {
                 await supabase.from('quotation_selected_terms').delete().eq('quotation_id', id);
             } else {
                 // Create new
+                const quoteNum = 'CNK-Q-' + Date.now();
                 const { data, error: insertError } = await supabase
                     .from('quotations')
                     .insert([{
                         ...quotationData,
-                        quotation_number: 'CNK-Q-' + Date.now(),
+                        quotation_number: quoteNum,  // For backward compatibility with existing DB constraint
+                        quote_number: quoteNum,       // New standard field name
                         status: 'draft'
                     }])
                     .select()
@@ -420,6 +428,32 @@ export const QuotationForm = () => {
                                 onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
                                 className="w-full px-4 py-2.5 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm hover:border-blue-400 placeholder:text-gray-400"
                                 placeholder="e.g. Quotation for Project X"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                Contact
+                            </label>
+                            <input
+                                type="text"
+                                value={formData.contact}
+                                onChange={(e) => setFormData({ ...formData, contact: e.target.value })}
+                                className="w-full px-4 py-2.5 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm hover:border-blue-400 placeholder:text-gray-400"
+                                placeholder="e.g. 085272124268"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                RFQ Ref No
+                            </label>
+                            <input
+                                type="text"
+                                value={formData.rfq_ref_no}
+                                onChange={(e) => setFormData({ ...formData, rfq_ref_no: e.target.value })}
+                                className="w-full px-4 py-2.5 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm hover:border-blue-400 placeholder:text-gray-400"
+                                placeholder="e.g. RFQ-55777"
                             />
                         </div>
 

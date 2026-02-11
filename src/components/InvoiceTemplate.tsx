@@ -9,10 +9,12 @@ interface InvoiceTemplateProps {
     doSections?: InvoiceDeliverySection[]; // Optional for legacy invoices
     company?: Company;
     bankAccounts?: BankAccount[];
+    customerPO?: string | null;
+    doNumber?: string | null;
 }
 
 export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
-    ({ invoice, customer, items, doSections = [], company, bankAccounts }, ref) => {
+    ({ invoice, customer, items, doSections = [], company, bankAccounts, customerPO, doNumber }, ref) => {
         const formatDate = (dateString: string) => {
             return new Date(dateString).toLocaleDateString('en-GB', {
                 year: 'numeric',
@@ -70,13 +72,12 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
                                     <td className="text-left">{invoice.due_date ? formatDate(invoice.due_date) : '-'}</td>
                                 </tr>
                                 <tr>
-                                    <td className="font-semibold text-left pr-4">DO Number</td>
-                                    <td className="text-left">{invoice.do_number_ref || '-'}</td>
+                                    <td className="font-semibold text-left pr-4 align-top">DO Number</td>
+                                    <td className="text-left whitespace-pre-line">{doNumber || invoice.do_number_ref || '-'}</td>
                                 </tr>
                                 <tr>
                                     <td className="font-semibold text-left pr-4">Customer PO</td>
-                                    {/* Assuming Customer PO is passed via customer or invoice logic, if available. New schema has it on Sales Order. */}
-                                    <td className="text-left">{'-'}</td>
+                                    <td className="text-left">{customerPO || '-'}</td>
                                 </tr>
                                 <tr>
                                     <td className="font-semibold text-left pr-4">Requestor</td>
@@ -100,23 +101,10 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
                         </div>
                     </div>
 
-                    {/* Billing Info / Shipping Info (Image 2 says BILLING INFO, Image 3 says SHIPPING ADDRESS) */}
-                    {/* For Invoice (Image 2), it seems to use Billing Info on the right, but maybe just empty or same? */}
-                    {/* The image shows 'BILLING INFO' on the right too, but let's stick to the Image 2 template which has valid info. 
-                         Actually Image 2 right side is 'BILLING INFO' header but lists Invoice No, Date etc... 
-                         Wait, the Image 2 provided shows 'BILLING ADDRESS' (Left) and 'BILLING INFO' (Right).
-                         But the 'BILLING INFO' block content IS the table I put in the header right?
-                         Let's look closely at Image 2.
-                         Ah, Image 2: 
-                         Header Left: Logo + Address. Header Right: "INVOICE".
-                         Row 2 Left: "BILLING ADDRESS" (Blue bar) -> Content.
-                         Row 2 Right: "BILLING INFO" (Blue bar) -> Content (Invoice No, Date, Term...).
-                         
-                         So I should move the "Invoice Details Table" into this "Billing Info" block to match Image 2 exactly.
-                     */}
+                    {/* Billing Info */}
                     <div>
                         <div className="bg-cyan-500 text-white font-bold px-2 py-1 mb-2 text-center uppercase">Billing Info</div>
-                        <div className="border border-black p-0 h-32 overflow-hidden">
+                        <div className="border border-black p-0 min-h-32">
                             {/* Moving the table here */}
                             <table className="w-full text-sm">
                                 <tbody>
@@ -137,12 +125,12 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
                                         <td className="py-0.5">{invoice.due_date ? formatDate(invoice.due_date) : '-'}</td>
                                     </tr>
                                     <tr>
-                                        <td className="font-semibold pl-2 py-0.5">DO Number</td>
-                                        <td className="py-0.5">{invoice.do_number_ref || '-'}</td>
+                                        <td className="font-semibold pl-2 py-0.5 align-top">DO Number</td>
+                                        <td className="py-0.5 pr-2 whitespace-pre-line">{doNumber || invoice.do_number_ref || '-'}</td>
                                     </tr>
                                     <tr>
                                         <td className="font-semibold pl-2 py-0.5">Customer PO</td>
-                                        <td className="py-0.5"> - </td>
+                                        <td className="py-0.5">{customerPO || '-'}</td>
                                     </tr>
                                     <tr>
                                         <td className="font-semibold pl-2 py-0.5">Requestor</td>
@@ -160,7 +148,7 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
                     <thead>
                         <tr className="bg-white border-b border-black">
                             <th className="border-r border-black p-1 text-center w-10">No</th>
-                            <th className="border-r border-black p-1 text-left w-24">Customer Items</th>
+                            <th className="border-r border-black p-1 text-left w-24">Items</th>
                             <th className="border-r border-black p-1 text-left">Description</th>
                             <th className="border-r border-black p-1 text-center w-12">QTY</th>
                             <th className="border-r border-black p-1 text-center w-12">UOM</th>
@@ -170,7 +158,6 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
                     </thead>
                     <tbody>
                         {doSections && doSections.length > 0 ? (
-                            // DO-based invoice: Show sections with headers
                             doSections.map((section) => {
                                 const sectionItems = items.filter(item => item.do_section_id === section.id);
                                 let itemCounter = items.filter(item =>
@@ -178,45 +165,88 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
                                     doSections.findIndex(s => s.id === section.id)
                                 ).length;
 
-                                return (
-                                    <React.Fragment key={section.id}>
-                                        {/* Section Header as Subject */}
-                                        <tr className="bg-blue-100 border-b border-black">
-                                            <td colSpan={7} className="p-2 font-bold text-blue-900">
-                                                Subject: {section.section_label || `Delivery ${section.section_number}`}
-                                            </td>
-                                        </tr>
-                                        {/* Section Items */}
-                                        {sectionItems.map((item) => {
-                                            itemCounter++;
-                                            return (
-                                                <tr key={item.id} className="border-b border-black">
-                                                    <td className="border-r border-black p-1 text-center">{itemCounter}</td>
-                                                    <td className="border-r border-black p-1">{item.item_code}</td>
-                                                    <td className="border-r border-black p-1">{item.description || item.item_code}</td>
-                                                    <td className="border-r border-black p-1 text-center">{item.quantity}</td>
-                                                    <td className="border-r border-black p-1 text-center">{item.uom}</td>
-                                                    <td className="border-r border-black p-1 text-right">{item.unit_price.toFixed(2)}</td>
-                                                    <td className="p-1 text-right">{item.total_price.toFixed(2)}</td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </React.Fragment>
+                                const grouped = sectionItems.reduce((acc, item) => {
+                                    // Group by group_name first, then item_code (same as DO template)
+                                    const groupKey = item.group_name || item.item_code || '__ungrouped__';
+                                    if (!acc[groupKey]) acc[groupKey] = [];
+                                    acc[groupKey].push(item);
+                                    return acc;
+                                }, {} as Record<string, InvoiceItem[]>);
+
+                                const rows: JSX.Element[] = [];
+
+                                rows.push(
+                                    <tr key={`section-${section.id}`} className="bg-blue-100 border-b border-black">
+                                        <td colSpan={7} className="p-2 font-bold text-blue-900">
+                                            Subject: {section.section_label || `Delivery ${section.section_number}`}
+                                        </td>
+                                    </tr>
                                 );
+
+                                Object.entries(grouped).forEach(([groupName, groupItems]) => {
+                                    groupItems.forEach((item, idx) => {
+                                        itemCounter++;
+                                        rows.push(
+                                            <tr key={item.id} className="border-b border-black">
+                                                <td className="border-r border-black p-1 text-center">{itemCounter}</td>
+                                                {idx === 0 && (
+                                                    <td
+                                                        className="border-r border-black p-1"
+                                                        rowSpan={groupItems.length}
+                                                    >
+                                                        {groupName !== '__ungrouped__' ? groupName : ''}
+                                                    </td>
+                                                )}
+                                                <td className="border-r border-black p-1">{item.description || item.item_code}</td>
+                                                <td className="border-r border-black p-1 text-center">{item.quantity}</td>
+                                                <td className="border-r border-black p-1 text-center">{item.uom}</td>
+                                                <td className="border-r border-black p-1 text-right">{item.unit_price.toFixed(2)}</td>
+                                                <td className="p-1 text-right">{item.total_price.toFixed(2)}</td>
+                                            </tr>
+                                        );
+                                    });
+                                });
+
+                                return <React.Fragment key={section.id}>{rows}</React.Fragment>;
                             })
                         ) : (
-                            // Legacy invoice: Show items normally
-                            items.map((item, index) => (
-                                <tr key={item.id} className="border-b border-black">
-                                    <td className="border-r border-black p-1 text-center">{index + 1}</td>
-                                    <td className="border-r border-black p-1">{item.item_code}</td>
-                                    <td className="border-r border-black p-1">{item.description || item.item_code}</td>
-                                    <td className="border-r border-black p-1 text-center">{item.quantity}</td>
-                                    <td className="border-r border-black p-1 text-center">{item.uom}</td>
-                                    <td className="border-r border-black p-1 text-right">{item.unit_price.toFixed(2)}</td>
-                                    <td className="p-1 text-right">{item.total_price.toFixed(2)}</td>
-                                </tr>
-                            ))
+                            (() => {
+                                const grouped = items.reduce((acc, item) => {
+                                    // Group by group_name first, then item_code (same as DO template)
+                                    const groupKey = item.group_name || item.item_code || '__ungrouped__';
+                                    if (!acc[groupKey]) acc[groupKey] = [];
+                                    acc[groupKey].push(item);
+                                    return acc;
+                                }, {} as Record<string, InvoiceItem[]>);
+
+                                let counter = 1;
+                                const rows: JSX.Element[] = [];
+
+                                Object.entries(grouped).forEach(([groupName, groupItems]) => {
+                                    groupItems.forEach((item, idx) => {
+                                        rows.push(
+                                            <tr key={item.id} className="border-b border-black">
+                                                <td className="border-r border-black p-1 text-center">{counter++}</td>
+                                                {idx === 0 && (
+                                                    <td
+                                                        className="border-r border-black p-1"
+                                                        rowSpan={groupItems.length}
+                                                    >
+                                                        {groupName !== '__ungrouped__' ? groupName : ''}
+                                                    </td>
+                                                )}
+                                                <td className="border-r border-black p-1">{item.description || item.item_code}</td>
+                                                <td className="border-r border-black p-1 text-center">{item.quantity}</td>
+                                                <td className="border-r border-black p-1 text-center">{item.uom}</td>
+                                                <td className="border-r border-black p-1 text-right">{item.unit_price.toFixed(2)}</td>
+                                                <td className="p-1 text-right">{item.total_price.toFixed(2)}</td>
+                                            </tr>
+                                        );
+                                    });
+                                });
+
+                                return rows;
+                            })()
                         )}
                     </tbody>
                 </table>

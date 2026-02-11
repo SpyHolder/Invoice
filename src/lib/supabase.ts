@@ -67,6 +67,8 @@ export interface Quotation {
     date: string;
     validity_date: string | null;
     subject: string | null; // "To Supply Labor and Material..." (Image 1)
+    contact: string | null; // Contact information for quotation
+    rfq_ref_no: string | null; // RFQ Reference Number
     subtotal: number;
     discount_amount: number; // "Good Will Discount" (Image 1)
     total_amount: number;
@@ -120,6 +122,8 @@ export interface DeliveryOrder {
     requestor_name: string | null;
     shipping_address_snapshot: string | null;
     customer_id?: string | null;
+    customer_po_number?: string | null;  // From Sales Order (for display)
+    quote_ref?: string | null;           // From Quotation (for display)
     created_at?: string;
 }
 
@@ -169,6 +173,7 @@ export interface InvoiceItem {
     invoice_id: string;
     do_section_id?: string | null; // Reference to which DO section
     item_code: string | null; // "00010"
+    group_name?: string | null; // Group name from DO items (e.g. "Equipment", "Materials")
     description: string | null; // "01 - 50% Upon..."
     quantity: number;
     uom: string | null;
@@ -214,10 +219,20 @@ export interface PurchaseOrderItem {
     total: number;
 }
 
+// Term Categories
+export interface TermCategory {
+    id: string;
+    name: string;
+    sort_order: number;
+    created_at?: string;
+    updated_at?: string;
+}
+
 // Quotation Terms & Conditions
 export interface QuotationTerm {
     id: string;
-    category: string; // Remarks, Warranty, Cancellation, Payment Plan, General Terms
+    category: string; // Legacy field - category name as string
+    category_id?: string | null; // New field - foreign key to term_categories
     title: string | null;
     content: string;
     sort_order: number;
@@ -233,13 +248,13 @@ export interface QuotationSelectedTerm {
     created_at?: string;
 }
 
-// Term Categories constant for UI
-export const TERM_CATEGORIES = [
+// Legacy: Term Categories constant for backward compatibility
+// NOTE: Categories are now fetched dynamically from the database
+// This constant is kept for fallback purposes only
+export const LEGACY_TERM_CATEGORIES = [
     'Remarks',
     'Warranty',
     'Cancellation',
     'Payment Plan',
     'General Terms'
 ] as const;
-
-export type TermCategory = typeof TERM_CATEGORIES[number];

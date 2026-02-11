@@ -1,20 +1,27 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Save, X } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, FolderPlus, Check } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { supabase, QuotationTerm, TERM_CATEGORIES, TermCategory } from '../lib/supabase';
+import { supabase, QuotationTerm, TermCategory } from '../lib/supabase';
 import { useToast } from '../contexts/ToastContext';
 
 export const TermsConditions = () => {
     const { showToast } = useToast();
     const [terms, setTerms] = useState<QuotationTerm[]>([]);
+    const [categories, setCategories] = useState<TermCategory[]>([]);
     const [loading, setLoading] = useState(true);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [showAddForm, setShowAddForm] = useState(false);
-    const [selectedCategory, setSelectedCategory] = useState<TermCategory | 'all'>('all');
+    const [selectedCategory, setSelectedCategory] = useState<string | 'all'>('all');
+
+    // Category management states
+    const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+    const [editingCategoryName, setEditingCategoryName] = useState('');
+    const [showAddCategoryForm, setShowAddCategoryForm] = useState(false);
+    const [newCategoryName, setNewCategoryName] = useState('');
 
     const [formData, setFormData] = useState({
-        category: 'Remarks' as TermCategory,
+        category_id: '',
         title: '',
         content: '',
         sort_order: 0,
@@ -22,8 +29,24 @@ export const TermsConditions = () => {
     });
 
     useEffect(() => {
+        fetchCategories();
         fetchTerms();
     }, []);
+
+    const fetchCategories = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('term_categories')
+                .select('*')
+                .order('sort_order');
+
+            if (error) throw error;
+            setCategories(data || []);
+        } catch (error: any) {
+            console.error('Error fetching categories:', error);
+            showToast('Failed to load categories', 'error');
+        }
+    };
 
     const fetchTerms = async () => {
         setLoading(true);
@@ -46,7 +69,7 @@ export const TermsConditions = () => {
 
     const resetForm = () => {
         setFormData({
-            category: 'Remarks',
+            category_id: categories[0]?.id || '',
             title: '',
             content: '',
             sort_order: 0,
@@ -58,7 +81,7 @@ export const TermsConditions = () => {
 
     const handleEdit = (term: QuotationTerm) => {
         setFormData({
-            category: term.category as TermCategory,
+            category_id: term.category_id || '',
             title: term.title || '',
             content: term.content,
             sort_order: term.sort_order,
@@ -74,10 +97,18 @@ export const TermsConditions = () => {
             showToast('Content is required', 'error');
             return;
         }
+        if (!formData.category_id) {
+            showToast('Category is required', 'error');
+            return;
+        }
 
         try {
+            // Get category name for legacy field
+            const category = categories.find(c => c.id === formData.category_id);
+
             const termData = {
-                category: formData.category,
+                category_id: formData.category_id,
+                category: category?.name || '',
                 title: formData.title.trim() || null,
                 content: formData.content.trim(),
                 sort_order: formData.sort_order,
@@ -139,15 +170,104 @@ export const TermsConditions = () => {
         }
     };
 
+    // Category CRUD handlers
+    const handleAddCategory = async () => {
+        if (!newCategoryName.trim()) {
+            showToast('Category name is required', 'error');
+            return;
+        }
+
+        try {
+            const { error } = await supabase
+                .from('term_categories')
+                .insert([{
+                    name: newCategoryName.trim(),
+                    sort_order: categories.length + 1
+                }]);
+
+            if (error) throw error;
+            showToast('Category created successfully', 'success');
+            setNewCategoryName('');
+            setShowAddCategoryForm(false);
+            fetchCategories();
+        } catch (error: any) {
+            console.error('Error creating category:', error);
+            showToast(error.message || 'Failed to create category', 'error');
+        }
+    };
+
+    const handleEditCategory = (category: TermCategory) => {
+        setEditingCategoryId(category.id);
+        setEditingCategoryName(category.name);
+    };
+
+    const handleSaveCategory = async (id: string) => {
+        if (!editingCategoryName.trim()) {
+            showToast('Category name is required', 'error');
+            return;
+        }
+
+        try {
+            const { error } = await supabase
+                .from('term_categories')
+                .update({ name: editingCategoryName.trim() })
+                .eq('id', id);
+
+            if (error) throw error;
+
+            // Also update all terms using this category
+            const { error: termsError } = await supabase
+                .from('quotation_terms')
+                .update({ category: editingCategoryName.trim() })
+                .eq('category_id', id);
+
+            if (termsError) console.error('Error updating terms:', termsError);
+
+            showToast('Category updated successfully', 'success');
+            setEditingCategoryId(null);
+            setEditingCategoryName('');
+            fetchCategories();
+            fetchTerms();
+        } catch (error: any) {
+            console.error('Error updating category:', error);
+            showToast(error.message || 'Failed to update category', 'error');
+        }
+    };
+
+    const handleDeleteCategory = async (id: string, name: string) => {
+        // Check if category is in use
+        const termsUsingCategory = terms.filter(t => t.category_id === id);
+        if (termsUsingCategory.length > 0) {
+            showToast(`Cannot delete "${name}": ${termsUsingCategory.length} term(s) using this category`, 'error');
+            return;
+        }
+
+        if (!confirm(`Are you sure you want to delete category "${name}"?`)) return;
+
+        try {
+            const { error } = await supabase
+                .from('term_categories')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+            showToast('Category deleted successfully', 'success');
+            fetchCategories();
+        } catch (error: any) {
+            console.error('Error deleting category:', error);
+            showToast(error.message || 'Failed to delete category', 'error');
+        }
+    };
+
     // Group terms by category
-    const groupedTerms = TERM_CATEGORIES.reduce((acc, category) => {
-        acc[category] = terms.filter(t => t.category === category);
+    const groupedTerms = categories.reduce((acc, category) => {
+        acc[category.id] = terms.filter(t => t.category_id === category.id);
         return acc;
-    }, {} as Record<TermCategory, QuotationTerm[]>);
+    }, {} as Record<string, QuotationTerm[]>);
 
     const filteredCategories = selectedCategory === 'all'
-        ? TERM_CATEGORIES
-        : [selectedCategory];
+        ? categories
+        : categories.filter(c => c.id === selectedCategory);
 
     if (loading) {
         return (
@@ -170,27 +290,129 @@ export const TermsConditions = () => {
                 </Button>
             </div>
 
+            {/* Category Management Section */}
+            <Card className="bg-purple-50 border-purple-200">
+                <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-semibold text-gray-900">Categories</h2>
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setShowAddCategoryForm(true)}
+                        disabled={showAddCategoryForm}
+                    >
+                        <FolderPlus className="w-4 h-4" />
+                        Add Category
+                    </Button>
+                </div>
+
+                {/* Add Category Form */}
+                {showAddCategoryForm && (
+                    <div className="mb-4 p-3 bg-white rounded-lg border border-purple-300">
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={newCategoryName}
+                                onChange={(e) => setNewCategoryName(e.target.value)}
+                                onKeyPress={(e) => e.key === 'Enter' && handleAddCategory()}
+                                placeholder="Enter category name..."
+                                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                autoFocus
+                            />
+                            <Button size="sm" onClick={handleAddCategory}>
+                                <Check className="w-4 h-4" />
+                            </Button>
+                            <Button size="sm" variant="secondary" onClick={() => {
+                                setShowAddCategoryForm(false);
+                                setNewCategoryName('');
+                            }}>
+                                <X className="w-4 h-4" />
+                            </Button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Categories List */}
+                <div className="flex flex-wrap gap-2">
+                    {categories.map(category => {
+                        const count = groupedTerms[category.id]?.length || 0;
+                        return (
+                            <div
+                                key={category.id}
+                                className="flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-purple-200 shadow-sm"
+                            >
+                                {editingCategoryId === category.id ? (
+                                    <>
+                                        <input
+                                            type="text"
+                                            value={editingCategoryName}
+                                            onChange={(e) => setEditingCategoryName(e.target.value)}
+                                            onKeyPress={(e) => e.key === 'Enter' && handleSaveCategory(category.id)}
+                                            className="w-32 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            autoFocus
+                                        />
+                                        <button
+                                            onClick={() => handleSaveCategory(category.id)}
+                                            className="p-1 text-green-600 hover:bg-green-50 rounded"
+                                        >
+                                            <Check className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setEditingCategoryId(null);
+                                                setEditingCategoryName('');
+                                            }}
+                                            className="p-1 text-gray-600 hover:bg-gray-50 rounded"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="font-medium text-gray-900">{category.name}</span>
+                                        <span className="text-xs text-gray-500">({count})</span>
+                                        <button
+                                            onClick={() => handleEditCategory(category)}
+                                            className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                            title="Edit"
+                                        >
+                                            <Edit2 className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDeleteCategory(category.id, category.name)}
+                                            className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                            title="Delete"
+                                        >
+                                            <Trash2 className="w-3 h-3" />
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </Card>
+
             {/* Filter by category */}
             <div className="flex gap-2 flex-wrap">
                 <button
                     onClick={() => setSelectedCategory('all')}
                     className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${selectedCategory === 'all'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                         }`}
                 >
                     All Categories
                 </button>
-                {TERM_CATEGORIES.map(category => (
+                {categories.map(category => (
                     <button
-                        key={category}
-                        onClick={() => setSelectedCategory(category)}
-                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${selectedCategory === category
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        key={category.id}
+                        onClick={() => setSelectedCategory(category.id)}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${selectedCategory === category.id
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                             }`}
                     >
-                        {category} ({groupedTerms[category]?.length || 0})
+                        {category.name} ({groupedTerms[category.id]?.length || 0})
                     </button>
                 ))}
             </div>
@@ -209,13 +431,14 @@ export const TermsConditions = () => {
                                     Category *
                                 </label>
                                 <select
-                                    value={formData.category}
-                                    onChange={(e) => setFormData({ ...formData, category: e.target.value as TermCategory })}
+                                    value={formData.category_id}
+                                    onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
                                     className="input w-full bg-white"
                                     required
                                 >
-                                    {TERM_CATEGORIES.map(cat => (
-                                        <option key={cat} value={cat}>{cat}</option>
+                                    <option value="">Select category...</option>
+                                    {categories.map(cat => (
+                                        <option key={cat.id} value={cat.id}>{cat.name}</option>
                                     ))}
                                 </select>
                             </div>
@@ -287,13 +510,13 @@ export const TermsConditions = () => {
 
             {/* Terms List by Category */}
             {filteredCategories.map(category => {
-                const categoryTerms = groupedTerms[category] || [];
+                const categoryTerms = groupedTerms[category.id] || [];
                 if (categoryTerms.length === 0 && selectedCategory !== 'all') return null;
 
                 return (
-                    <Card key={category}>
+                    <Card key={category.id}>
                         <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-xl font-semibold text-gray-900">{category}</h2>
+                            <h2 className="text-xl font-semibold text-gray-900">{category.name}</h2>
                             <span className="text-sm text-gray-500">
                                 {categoryTerms.length} term{categoryTerms.length !== 1 ? 's' : ''}
                             </span>
@@ -307,8 +530,8 @@ export const TermsConditions = () => {
                                     <div
                                         key={term.id}
                                         className={`p-4 rounded-lg border ${term.is_active
-                                                ? 'bg-white border-gray-200'
-                                                : 'bg-gray-100 border-gray-300 opacity-60'
+                                            ? 'bg-white border-gray-200'
+                                            : 'bg-gray-100 border-gray-300 opacity-60'
                                             }`}
                                     >
                                         <div className="flex items-start justify-between gap-4">
@@ -336,14 +559,14 @@ export const TermsConditions = () => {
                                                 <button
                                                     onClick={() => toggleActive(term)}
                                                     className={`p-2 rounded ${term.is_active
-                                                            ? 'text-green-600 hover:bg-green-50'
-                                                            : 'text-gray-400 hover:bg-gray-200'
+                                                        ? 'text-green-600 hover:bg-green-50'
+                                                        : 'text-gray-400 hover:bg-gray-200'
                                                         }`}
                                                     title={term.is_active ? 'Disable' : 'Enable'}
                                                 >
                                                     <div className={`w-4 h-4 rounded-full border-2 ${term.is_active
-                                                            ? 'bg-green-500 border-green-500'
-                                                            : 'border-gray-400'
+                                                        ? 'bg-green-500 border-green-500'
+                                                        : 'border-gray-400'
                                                         }`} />
                                                 </button>
                                                 <button
