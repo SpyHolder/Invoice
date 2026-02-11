@@ -715,7 +715,7 @@ export const PurchaseOrderForm = () => {
                                             value={newGroupName}
                                             onChange={e => setNewGroupName(e.target.value)}
                                             placeholder="New group name..."
-                                            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-48"
+                                            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 w-48"
                                         />
                                         <Button type="button" onClick={addGroup} variant="secondary" size="sm">
                                             <FolderPlus className="w-4 h-4" /> Add Group

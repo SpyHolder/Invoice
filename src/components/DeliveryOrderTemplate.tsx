@@ -60,28 +60,28 @@ export const DeliveryOrderTemplate = forwardRef<HTMLDivElement, DeliveryOrderTem
                         <table className="border-collapse ml-auto text-xs">
                             <tbody>
                                 <tr>
-                                    <th className="border border-black px-3 py-1 bg-gray-100 text-left whitespace-nowrap">DO Number</th>
-                                    <td className="border border-black px-3 py-1">{doData.do_number || '-'}</td>
+                                    <th className="border border-black px-1 py-0.5 bg-gray-100 text-left whitespace-nowrap">DO Number</th>
+                                    <td className="border border-black px-1 py-0.5">{doData.do_number || '-'}</td>
                                 </tr>
                                 <tr>
-                                    <th className="border border-black px-3 py-1 bg-gray-100 text-left whitespace-nowrap">DO Date</th>
-                                    <td className="border border-black px-3 py-1">{formatDateWithOrdinal(doData.date)}</td>
+                                    <th className="border border-black px-1 py-0.5 bg-gray-100 text-left whitespace-nowrap">DO Date</th>
+                                    <td className="border border-black px-1 py-0.5">{formatDateWithOrdinal(doData.date)}</td>
                                 </tr>
                                 <tr>
-                                    <th className="border border-black px-3 py-1 bg-gray-100 text-left whitespace-nowrap">DO Terms</th>
-                                    <td className="border border-black px-3 py-1">{doData.terms || 'On-Site Delivery'}</td>
+                                    <th className="border border-black px-1 py-0.5 bg-gray-100 text-left whitespace-nowrap">DO Terms</th>
+                                    <td className="border border-black px-1 py-0.5">{doData.terms || 'On-Site Delivery'}</td>
                                 </tr>
                                 <tr>
-                                    <th className="border border-black px-3 py-1 bg-gray-100 text-left whitespace-nowrap">Customer PO</th>
-                                    <td className="border border-black px-3 py-1">{customerPO || '-'}</td>
+                                    <th className="border border-black px-1 py-0.5 bg-gray-100 text-left whitespace-nowrap">Customer PO</th>
+                                    <td className="border border-black px-1 py-0.5">{customerPO || '-'}</td>
                                 </tr>
                                 <tr>
-                                    <th className="border border-black px-3 py-1 bg-gray-100 text-left whitespace-nowrap">Quote Ref</th>
-                                    <td className="border border-black px-3 py-1">{quoteRef || '-'}</td>
+                                    <th className="border border-black px-1 py-0.5 bg-gray-100 text-left whitespace-nowrap">Quote Ref</th>
+                                    <td className="border border-black px-1 py-0.5">{quoteRef || '-'}</td>
                                 </tr>
                                 <tr>
-                                    <th className="border border-black px-3 py-1 bg-gray-100 text-left whitespace-nowrap">Requestor</th>
-                                    <td className="border border-black px-3 py-1">{doData.requestor_name || '-'}</td>
+                                    <th className="border border-black px-1 py-0.5 bg-gray-100 text-left whitespace-nowrap">Requestor</th>
+                                    <td className="border border-black px-1 py-0.5">{doData.requestor_name || '-'}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -89,7 +89,7 @@ export const DeliveryOrderTemplate = forwardRef<HTMLDivElement, DeliveryOrderTem
                 </div>
 
                 {/* Addresses Row: Billing = Shipping (Same Content) */}
-                <div className="flex gap-4 mb-6">
+                <div className="flex gap-4 mb-3">
                     {/* Billing Address */}
                     <div className="flex-1 border border-black">
                         <div className="bg-cyan-500 text-white font-bold px-3 py-2 text-center">
@@ -105,7 +105,7 @@ export const DeliveryOrderTemplate = forwardRef<HTMLDivElement, DeliveryOrderTem
                     </div>
 
                     {/* Shipping Address (Same as Billing) */}
-                    <div className="flex-1 border border-black">
+                    <div className="flex-1 border border-black ">
                         <div className="bg-cyan-500 text-white font-bold px-3 py-2 text-center">
                             SHIPPING ADDRESS
                         </div>
@@ -122,19 +122,19 @@ export const DeliveryOrderTemplate = forwardRef<HTMLDivElement, DeliveryOrderTem
                 {/* Subject Section */}
                 {doData.subject && (
                     <div className="mb-3">
-                        <strong className="font-bold">Subject:</strong> <span>{doData.subject}</span>
+                        <strong className="font-bold text-xs">Subject:</strong> <span>{doData.subject}</span>
                     </div>
                 )}
 
                 {/* Items Table */}
-                <table className="w-full border-collapse border border-black text-xs mb-8">
+                <table className="w-full border-collapse border border-black text-xs mb-8 ">
                     <thead>
                         <tr className="bg-gray-100">
-                            <th className="border border-black p-2 text-center w-12">No</th>
-                            <th className="border border-black p-2 text-left w-32">Items</th>
-                            <th className="border border-black p-2 text-left">Description</th>
-                            <th className="border border-black p-2 text-center w-16">QTY</th>
-                            <th className="border border-black p-2 text-center w-16">UOM</th>
+                            <th className="border border-black py-0.5 px-1 text-center w-12">No</th>
+                            <th className="border border-black py-0.5 px-1 text-left w-32">Items</th>
+                            <th className="border border-black py-0.5 px-1 text-left">Description</th>
+                            <th className="border border-black py-0.5 px-1 text-center w-16">QTY</th>
+                            <th className="border border-black py-0.5 px-1 text-center w-16">UOM</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -155,19 +155,19 @@ export const DeliveryOrderTemplate = forwardRef<HTMLDivElement, DeliveryOrderTem
                                 groupItems.forEach((item, idx) => {
                                     rows.push(
                                         <tr key={item.id}>
-                                            <td className="border border-black p-2 text-center">{counter++}</td>
+                                            <td className="border border-black py-0.5 px-1 text-center">{counter++}</td>
                                             {/* Items column with rowspan on first row only */}
                                             {idx === 0 && (
                                                 <td
-                                                    className="border border-black p-2 text-center"
+                                                    className="border border-black py-0.5 px-1 text-center"
                                                     rowSpan={groupItems.length}
                                                 >
                                                     {groupName !== '__ungrouped__' ? groupName : ''}
                                                 </td>
                                             )}
-                                            <td className="border border-black p-2">{item.description}</td>
-                                            <td className="border border-black p-2 text-center">{item.quantity}</td>
-                                            <td className="border border-black p-2 text-center">{item.uom}</td>
+                                            <td className="border border-black py-0.5 px-1">{item.description}</td>
+                                            <td className="border border-black py-0.5 px-1 text-center">{item.quantity}</td>
+                                            <td className="border border-black py-0.5 px-1 text-center">{item.uom}</td>
                                         </tr>
                                     );
                                 });
@@ -181,12 +181,12 @@ export const DeliveryOrderTemplate = forwardRef<HTMLDivElement, DeliveryOrderTem
                 {/* Footer Signatures */}
                 <div className="mt-12 flex justify-between items-end">
                     <div className="text-center">
-                        <p className="mb-8">Received By:</p>
+                        <p className="mb-20">Received By:</p>
                         <div className="h-0 border-b border-black w-48 mb-2"></div>
                         <p className="font-semibold">Customer Signature & Stamp</p>
                     </div>
                     <div className="text-center">
-                        <p className="mb-8">Authorized By:</p>
+                        <p className="mb-20">Authorized By:</p>
                         <div className="h-0 border-b border-black w-48 mb-2"></div>
                         <p className="font-semibold">Company Stamp & Signature</p>
                     </div>

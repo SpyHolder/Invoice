@@ -103,19 +103,19 @@ export const SalesOrderTemplate = forwardRef<HTMLDivElement, SalesOrderTemplateP
                             <table className="w-full border-collapse border border-black text-xs">
                                 <thead>
                                     <tr className="bg-gray-100">
-                                        <th className="border border-black p-1 text-center w-12">No</th>
-                                        <th className="border border-black p-1 text-left">Description</th>
-                                        <th className="border border-black p-1 text-center w-16">Qty</th>
-                                        <th className="border border-black p-1 text-center w-16">UOM</th>
+                                        <th className="border border-black py-0.5 px-1 text-center w-12">No</th>
+                                        <th className="border border-black py-0.5 px-1 text-left">Description</th>
+                                        <th className="border border-black py-0.5 px-1 text-center w-16">Qty</th>
+                                        <th className="border border-black py-0.5 px-1 text-center w-16">UOM</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {phaseItems.map((item, index) => (
                                         <tr key={item.id}>
-                                            <td className="border border-black p-1 text-center">{index + 1}</td>
-                                            <td className="border border-black p-1">{item.description}</td>
-                                            <td className="border border-black p-1 text-center">{item.quantity}</td>
-                                            <td className="border border-black p-1 text-center">{item.uom}</td>
+                                            <td className="border border-black py-0.5 px-1 text-center">{index + 1}</td>
+                                            <td className="border border-black py-0.5 px-1">{item.description}</td>
+                                            <td className="border border-black py-0.5 px-1 text-center">{item.quantity}</td>
+                                            <td className="border border-black py-0.5 px-1 text-center">{item.uom}</td>
                                         </tr>
                                     ))}
                                 </tbody>

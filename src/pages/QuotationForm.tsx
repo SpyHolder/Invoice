@@ -729,7 +729,7 @@ export const QuotationForm = () => {
                     </div>
                 </Card>
 
-                <div className="flex gap-4 justify-end pt-4">
+                <div className="flex gap-4 justify-end pt-6 border-t border-gray-200 mt-8 sticky bottom-0 bg-gray-50/80 backdrop-blur-sm p-4 -mx-4 -mb-4 rounded-b-lg">
                     <Button type="button" variant="secondary" onClick={() => navigate('/quotations')}>
                         Cancel
                     </Button>

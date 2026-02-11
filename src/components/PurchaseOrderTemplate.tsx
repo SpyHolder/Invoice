@@ -107,20 +107,20 @@ export const PurchaseOrderTemplate = forwardRef<HTMLDivElement, PurchaseOrderTem
                         <table className="text-xs border-collapse ml-auto">
                             <tbody>
                                 <tr>
-                                    <td className="font-semibold text-left pr-3 border border-gray-400 px-2 py-1 bg-gray-100">PO Number</td>
-                                    <td className="text-left border border-gray-400 px-2 py-1">{po.po_number}</td>
+                                    <td className="font-semibold text-left pr-3 border border-gray-400 py-0.5 px-1 bg-gray-100">PO Number</td>
+                                    <td className="text-left border border-gray-400 py-0.5 px-1">{po.po_number}</td>
                                 </tr>
                                 <tr>
-                                    <td className="font-semibold text-left pr-3 border border-gray-400 px-2 py-1 bg-gray-100">PO Date</td>
-                                    <td className="text-left border border-gray-400 px-2 py-1">{formatDate(po.date)}</td>
+                                    <td className="font-semibold text-left pr-3 border border-gray-400 py-0.5 px-1 bg-gray-100">PO Date</td>
+                                    <td className="text-left border border-gray-400 py-0.5 px-1">{formatDate(po.date)}</td>
                                 </tr>
                                 <tr>
-                                    <td className="font-semibold text-left pr-3 border border-gray-400 px-2 py-1 bg-gray-100">PO Terms</td>
-                                    <td className="text-left border border-gray-400 px-2 py-1">{getPoTerms()}</td>
+                                    <td className="font-semibold text-left pr-3 border border-gray-400 py-0.5 px-1 bg-gray-100">PO Terms</td>
+                                    <td className="text-left border border-gray-400 py-0.5 px-1">{getPoTerms()}</td>
                                 </tr>
                                 <tr>
-                                    <td className="font-semibold text-left pr-3 border border-gray-400 px-2 py-1 bg-gray-100">Quote Ref</td>
-                                    <td className="text-left border border-gray-400 px-2 py-1">{po.quote_ref || '-'}</td>
+                                    <td className="font-semibold text-left pr-3 border border-gray-400 py-0.5 px-1 bg-gray-100">Quote Ref</td>
+                                    <td className="text-left border border-gray-400 py-0.5 px-1">{po.quote_ref || '-'}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -174,12 +174,12 @@ export const PurchaseOrderTemplate = forwardRef<HTMLDivElement, PurchaseOrderTem
                 <table className="w-full border-collapse border border-black mb-4 text-xs">
                     <thead>
                         <tr className="bg-cyan-500 text-white">
-                            <th className="border border-black p-1 text-center w-8">No</th>
-                            <th className="border border-black p-1 text-left w-24">Item Code</th>
-                            <th className="border border-black p-1 text-left">Description</th>
-                            <th className="border border-black p-1 text-center w-14">QTY</th>
-                            <th className="border border-black p-1 text-center w-20">Unit Price<br />(SGD)</th>
-                            <th className="border border-black p-1 text-center w-20">Total (SGD)</th>
+                            <th className="border border-black py-0.5 px-1 text-center w-8">No</th>
+                            <th className="border border-black py-0.5 px-1 text-left w-24">Item Code</th>
+                            <th className="border border-black py-0.5 px-1 text-left">Description</th>
+                            <th className="border border-black py-0.5 px-1 text-center w-14">QTY</th>
+                            <th className="border border-black py-0.5 px-1 text-center w-20">Unit Price<br />(SGD)</th>
+                            <th className="border border-black py-0.5 px-1 text-center w-20">Total (SGD)</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -188,21 +188,21 @@ export const PurchaseOrderTemplate = forwardRef<HTMLDivElement, PurchaseOrderTem
                                 {/* Group Header */}
                                 {group.groupName !== 'Default' && (
                                     <tr key={`header-${gIdx}`} className="bg-gray-100">
-                                        <td className="border border-black p-1 text-center font-bold">{String.fromCharCode(65 + gIdx)}</td>
-                                        <td colSpan={5} className="border border-black p-1 font-bold">{group.groupName}</td>
+                                        <td className="border border-black py-0.5 px-1 text-center font-bold">{String.fromCharCode(65 + gIdx)}</td>
+                                        <td colSpan={5} className="border border-black py-0.5 px-1 font-bold">{group.groupName}</td>
                                     </tr>
                                 )}
                                 {/* Group Items */}
                                 {group.items.map((item, iIdx) => (
                                     <tr key={item.id || `item-${gIdx}-${iIdx}`}>
-                                        <td className="border border-black p-1 text-center">
+                                        <td className="border border-black py-0.5 px-1 text-center">
                                             {group.groupName !== 'Default' ? iIdx + 1 : iIdx + 1}
                                         </td>
-                                        <td className="border border-black p-1">{item.item_code}</td>
-                                        <td className="border border-black p-1">{cleanDescription(item.description || '')}</td>
-                                        <td className="border border-black p-1 text-center">{item.quantity}</td>
-                                        <td className="border border-black p-1 text-right">{(item.unit_price || 0).toFixed(2)}</td>
-                                        <td className="border border-black p-1 text-right">{(item.total || 0).toFixed(2)}</td>
+                                        <td className="border border-black py-0.5 px-1">{item.item_code}</td>
+                                        <td className="border border-black py-0.5 px-1">{cleanDescription(item.description || '')}</td>
+                                        <td className="border border-black py-0.5 px-1 text-center">{item.quantity}</td>
+                                        <td className="border border-black py-0.5 px-1 text-right">{(item.unit_price || 0).toFixed(2)}</td>
+                                        <td className="border border-black py-0.5 px-1 text-right">{(item.total || 0).toFixed(2)}</td>
                                     </tr>
                                 ))}
                             </>
@@ -217,39 +217,39 @@ export const PurchaseOrderTemplate = forwardRef<HTMLDivElement, PurchaseOrderTem
                         <table className="border-collapse text-xs">
                             <thead>
                                 <tr className="bg-gray-200">
-                                    <th className="border border-black px-3 py-1 text-center">No</th>
-                                    <th className="border border-black px-3 py-1 text-left">Description</th>
-                                    <th className="border border-black px-3 py-1 text-right">Total</th>
+                                    <th className="border border-black py-0.5 px-1 text-center">No</th>
+                                    <th className="border border-black py-0.5 px-1 text-left">Description</th>
+                                    <th className="border border-black py-0.5 px-1 text-right">Total</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {groupedItems.filter(g => g.groupName !== 'Default').map((g, idx) => (
                                     <tr key={g.groupName}>
-                                        <td className="border border-black px-3 py-1 text-center">{idx + 1}</td>
-                                        <td className="border border-black px-3 py-1">{g.groupName}</td>
-                                        <td className="border border-black px-3 py-1 text-right">{g.subtotal.toFixed(2)}</td>
+                                        <td className="border border-black py-0.5 px-1 text-center">{idx + 1}</td>
+                                        <td className="border border-black py-0.5 px-1">{g.groupName}</td>
+                                        <td className="border border-black py-0.5 px-1 text-right">{g.subtotal.toFixed(2)}</td>
                                     </tr>
                                 ))}
                                 {groupedItems.filter(g => g.groupName === 'Default').length > 0 && (
                                     <tr>
-                                        <td className="border border-black px-3 py-1 text-center">{groupedItems.filter(g => g.groupName !== 'Default').length + 1}</td>
-                                        <td className="border border-black px-3 py-1">Other Items</td>
-                                        <td className="border border-black px-3 py-1 text-right">
+                                        <td className="border border-black py-0.5 px-1 text-center">{groupedItems.filter(g => g.groupName !== 'Default').length + 1}</td>
+                                        <td className="border border-black py-0.5 px-1">Other Items</td>
+                                        <td className="border border-black py-0.5 px-1 text-right">
                                             {groupedItems.find(g => g.groupName === 'Default')?.subtotal.toFixed(2)}
                                         </td>
                                     </tr>
                                 )}
                                 <tr className="font-bold">
-                                    <td className="border border-black px-3 py-1" colSpan={2}>Total (SGD) Before Tax</td>
-                                    <td className="border border-black px-3 py-1 text-right">{subtotal.toFixed(2)}</td>
+                                    <td className="border border-black py-0.5 px-1" colSpan={2}>Total (SGD) Before Tax</td>
+                                    <td className="border border-black py-0.5 px-1 text-right">{subtotal.toFixed(2)}</td>
                                 </tr>
                                 <tr>
-                                    <td className="border border-black px-3 py-1" colSpan={2}>GST {gstRate}%</td>
-                                    <td className="border border-black px-3 py-1 text-right">{gst.toFixed(2)}</td>
+                                    <td className="border border-black py-0.5 px-1" colSpan={2}>GST {gstRate}%</td>
+                                    <td className="border border-black py-0.5 px-1 text-right">{gst.toFixed(2)}</td>
                                 </tr>
                                 <tr className="font-bold bg-gray-100">
-                                    <td className="border border-black px-3 py-1" colSpan={2}>Total After Tax</td>
-                                    <td className="border border-black px-3 py-1 text-right">{total.toFixed(2)}</td>
+                                    <td className="border border-black py-0.5 px-1" colSpan={2}>Total After Tax</td>
+                                    <td className="border border-black py-0.5 px-1 text-right">{total.toFixed(2)}</td>
                                 </tr>
                             </tbody>
                         </table>

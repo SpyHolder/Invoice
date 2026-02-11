@@ -103,7 +103,7 @@ export const SalesOrders = () => {
 
     return (
         <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="sticky top-0 z-10 bg-white pb-4 pt-6 -mt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Sales Orders</h1>
                     <p className="text-gray-500 mt-1">Manage your customer orders and projects.</p>

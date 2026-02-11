@@ -36,9 +36,9 @@ export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplatePro
         }, {} as Record<TermCategoryName, QuotationTerm[]>);
 
         return (
-            <div ref={ref} className="p-8 bg-white text-black font-sans text-sm h-full mx-auto" style={{ width: '210mm', minHeight: '297mm' }}>
+            <div ref={ref} className="p-8 bg-white text-black font-sans h-full mx-auto" style={{ width: '210mm', minHeight: '297mm' }}>
                 {/* Header: Logo and Company Info */}
-                <div className="flex gap-4 mb-4 border-b pb-4">
+                <div className="flex gap-4 mb-4 border-b pb-4 text-md">
                     <div className="w-32 h-32 border border-orange-400 flex items-center justify-center text-gray-400">
                         {company?.logo_url ? (
                             <img src={company.logo_url} alt="Logo" className="max-w-full max-h-full" />
@@ -53,7 +53,7 @@ export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplatePro
                 </div>
 
                 {/* Customer Info & Quote Details Row */}
-                <div className="flex justify-between mb-2">
+                <div className="flex justify-between mb-2 text-xs">
                     {/* Customer Block */}
                     <div className="w-1/2">
                         <div className="flex">
@@ -112,7 +112,7 @@ export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplatePro
                 </div>
 
                 {/* Subject Line */}
-                <div className="flex border-t border-black pt-2 mb-2">
+                <div className="flex border-t border-black pt-2 mb-2 text-xs">
                     <span className="w-24">Subject</span>
                     <span>:</span>
                     <span className="ml-2 font-semibold underline">{quotation.subject || 'To Supply Labor and Material...'}</span>
@@ -121,37 +121,37 @@ export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplatePro
                 <div className="border-t border-black mb-1"></div>
 
                 {/* Table Header - Matches Image 1 */}
-                <div className="font-semibold mb-1">
+                <div className="font-semibold mb-1 text-xs">
                     A ) {quotation.subject || 'To Supply Labor and Material...'}
                 </div>
 
                 <table className="w-full border-collapse border border-black mb-4 text-xs">
                     <thead>
                         <tr className="bg-white">
-                            <th className="border border-black p-1 text-center w-8">No</th>
-                            <th className="border border-black p-1 text-left">Description</th>
-                            <th className="border border-black p-1 text-center w-10">QTY</th>
-                            <th className="border border-black p-1 text-center w-10">UOM</th>
-                            <th className="border border-black p-1 text-right w-16">U/Price</th>
-                            <th className="border border-black p-1 text-right w-16">Bef Disc</th>
-                            <th className="border border-black p-1 text-center w-12">Disc %</th>
-                            <th className="border border-black p-1 text-right w-16">Disc Amt</th>
-                            <th className="border border-black p-1 text-right w-16">Total</th>
+                            <th className="border border-black py-0.5 px-1 text-center w-8">No</th>
+                            <th className="border border-black py-0.5 px-1 text-left">Description</th>
+                            <th className="border border-black py-0.5 px-1 text-center w-10">QTY</th>
+                            <th className="border border-black py-0.5 px-1 text-center w-10">UOM</th>
+                            <th className="border border-black py-0.5 px-1 text-right w-16">U/Price</th>
+                            <th className="border border-black py-0.5 px-1 text-right w-16">Bef Disc</th>
+                            <th className="border border-black py-0.5 px-1 text-center w-12">Disc %</th>
+                            <th className="border border-black py-0.5 px-1 text-right w-16">Disc Amt</th>
+                            <th className="border border-black py-0.5 px-1 text-right w-16">Total</th>
                         </tr>
                     </thead>
                     <tbody>
                         {items.map((item, index) => {
                             return (
                                 <tr key={item.id}>
-                                    <td className="border border-black p-1 text-center">{index + 1}</td>
-                                    <td className="border border-black p-1">{item.item_description || 'Item'}</td>
-                                    <td className="border border-black p-1 text-center">{item.quantity}</td>
-                                    <td className="border border-black p-1 text-center">{item.uom || 'EA'}</td>
-                                    <td className="border border-black p-1 text-right">{item.unit_price?.toFixed(2)}</td>
-                                    <td className="border border-black p-1 text-right">{(items[index].quantity * items[index].unit_price).toFixed(2)}</td>
-                                    <td className="border border-black p-1 text-center">{item.disc_percent || 0}</td>
-                                    <td className="border border-black p-1 text-right">{item.disc_amount?.toFixed(2) || '0.00'}</td>
-                                    <td className="border border-black p-1 text-right">{item.total_price?.toFixed(2)}</td>
+                                    <td className="border border-black py-0.5 px-1 text-center">{index + 1}</td>
+                                    <td className="border border-black py-0.5 px-1">{item.item_description || 'Item'}</td>
+                                    <td className="border border-black py-0.5 px-1 text-center">{item.quantity}</td>
+                                    <td className="border border-black py-0.5 px-1 text-center">{item.uom || 'EA'}</td>
+                                    <td className="border border-black py-0.5 px-1 text-right">{item.unit_price?.toFixed(2)}</td>
+                                    <td className="border border-black py-0.5 px-1 text-right">{(items[index].quantity * items[index].unit_price).toFixed(2)}</td>
+                                    <td className="border border-black py-0.5 px-1 text-center">{item.disc_percent || 0}</td>
+                                    <td className="border border-black py-0.5 px-1 text-right">{item.disc_amount?.toFixed(2) || '0.00'}</td>
+                                    <td className="border border-black py-0.5 px-1 text-right">{item.total_price?.toFixed(2)}</td>
                                 </tr>
                             );
                         })}
@@ -159,12 +159,12 @@ export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplatePro
                 </table>
 
                 {/* Budget Summary Footer */}
-                <div className="flex justify-end mt-4">
-                    <div className="w-1/2 border border-black">
-                        <div className="flex justify-center border-b border-black bg-gray-100 p-1 font-semibold text-sm">
+                <div className="flex justify-end mt-4 text-xs">
+                    <div className="w-2/5 border border-black">
+                        <div className="flex justify-center border-b border-black bg-gray-100 py-0.5 px-1 font-semibold text-sm">
                             Budget Summary
                         </div>
-                        <div className="p-1">
+                        <div className="py-0.5 px-1">
                             <div className="flex justify-between mb-1">
                                 <span className="text-right flex-1 pr-4">Scope for A</span>
                                 <span className="w-24 text-right border-b border-gray-300">{quotation.subtotal?.toFixed(2)}</span>
@@ -288,28 +288,28 @@ export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplatePro
                     <table className="border-collapse border border-black">
                         <tbody>
                             <tr>
-                                <td className="border border-black p-1 w-48">Bank Name (Final Destination Bank)</td>
-                                <td className="border border-black p-1">{BANK_DETAILS.bankName}</td>
+                                <td className="border border-black py-0.5 px-1 w-48">Bank Name (Final Destination Bank)</td>
+                                <td className="border border-black py-0.5 px-1">{BANK_DETAILS.bankName}</td>
                             </tr>
                             <tr>
-                                <td className="border border-black p-1">Bank Address</td>
-                                <td className="border border-black p-1">{BANK_DETAILS.bankAddress}</td>
+                                <td className="border border-black py-0.5 px-1">Bank Address</td>
+                                <td className="border border-black py-0.5 px-1">{BANK_DETAILS.bankAddress}</td>
                             </tr>
                             <tr>
-                                <td className="border border-black p-1">Account Number</td>
-                                <td className="border border-black p-1">{BANK_DETAILS.accountNumber}</td>
+                                <td className="border border-black py-0.5 px-1">Account Number</td>
+                                <td className="border border-black py-0.5 px-1">{BANK_DETAILS.accountNumber}</td>
                             </tr>
                             <tr>
-                                <td className="border border-black p-1">Swift Code (Non-US Bank)</td>
-                                <td className="border border-black p-1">{BANK_DETAILS.swiftCode}</td>
+                                <td className="border border-black py-0.5 px-1">Swift Code (Non-US Bank)</td>
+                                <td className="border border-black py-0.5 px-1">{BANK_DETAILS.swiftCode}</td>
                             </tr>
                             <tr>
-                                <td className="border border-black p-1">Bank Key/Branch Code</td>
-                                <td className="border border-black p-1">{BANK_DETAILS.branchCode}</td>
+                                <td className="border border-black py-0.5 px-1">Bank Key/Branch Code</td>
+                                <td className="border border-black py-0.5 px-1">{BANK_DETAILS.branchCode}</td>
                             </tr>
                             <tr>
-                                <td className="border border-black p-1">PayNow UEN</td>
-                                <td className="border border-black p-1">{BANK_DETAILS.paynowUen}</td>
+                                <td className="border border-black py-0.5 px-1">PayNow UEN</td>
+                                <td className="border border-black py-0.5 px-1">{BANK_DETAILS.paynowUen}</td>
                             </tr>
                         </tbody>
                     </table>

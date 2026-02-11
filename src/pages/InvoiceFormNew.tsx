@@ -526,7 +526,7 @@ export const InvoiceFormNew = () => {
                                     <span>Discount:</span>
                                     <input
                                         type="number"
-                                        className="w-32 border border-gray-300 rounded-lg p-2 text-right bg-white text-black focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                        className="w-32 border border-gray-300 rounded-lg p-2 text-right bg-white text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                         value={formData.discount}
                                         onChange={(e) => setFormData({ ...formData, discount: parseFloat(e.target.value) || 0 })}
                                         min="0"
@@ -537,7 +537,7 @@ export const InvoiceFormNew = () => {
                                     <span>GST (%):</span>
                                     <input
                                         type="number"
-                                        className="w-32 border border-gray-300 rounded-lg p-2 text-right bg-white text-black focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                        className="w-32 border border-gray-300 rounded-lg p-2 text-right bg-white text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                                         value={formData.tax_rate}
                                         onChange={(e) => setFormData({ ...formData, tax_rate: parseFloat(e.target.value) || 0 })}
                                         min="0"
@@ -561,7 +561,7 @@ export const InvoiceFormNew = () => {
                     <div>
                         <label className="block text-sm font-medium mb-2">Notes</label>
                         <textarea
-                            className="w-full border rounded-lg p-2"
+                            className="w-full border border-gray-300 rounded-lg p-2 bg-white text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                             value={formData.notes}
                             onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                             rows={3}
@@ -570,7 +570,7 @@ export const InvoiceFormNew = () => {
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="flex justify-end gap-3">
+                    <div className="flex justify-end gap-3 pt-6 border-t border-gray-200 mt-8 sticky bottom-0 bg-gray-50/80 backdrop-blur-sm p-4 -mx-4 -mb-4 rounded-b-lg">
                         <Button
                             type="button"
                             variant="secondary"

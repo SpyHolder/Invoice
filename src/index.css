@@ -67,6 +67,15 @@ body {
     @apply w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all;
   }
 
+  /* Force light theme for all inputs to prevent dark mode issues */
+  input[type="number"],
+  input[type="text"],
+  input[type="date"],
+  textarea,
+  select {
+    color-scheme: light;
+  }
+
   .table {
     @apply w-full border-collapse;
   }
@@ -149,4 +158,17 @@ html {
 
 .animate-slide-in {
   animation: slideIn 0.3s ease-out;
+}
+
+@media print {
+  @page {
+    margin: 0;
+    size: auto;
+  }
+
+  body {
+    margin: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }
