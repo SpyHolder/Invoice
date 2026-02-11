@@ -16,8 +16,6 @@ export const ViewSalesOrder = () => {
     const [items, setItems] = useState<SalesOrderItem[]>([]);
     const [company, setCompany] = useState<Company | undefined>(undefined);
     const [loading, setLoading] = useState(true);
-    const [billingSummary, setBillingSummary] = useState<any>(null);
-    const [invoices, setInvoices] = useState<any[]>([]);
     const [deliveryProgress, setDeliveryProgress] = useState<any>(null);
 
     const handlePrint = useReactToPrint({
@@ -83,22 +81,6 @@ export const ViewSalesOrder = () => {
                 .limit(1)
                 .single();
             if (companyData) setCompany(companyData);
-
-            // Fetch Billing Summary
-            const { data: billingSummaryData } = await supabase
-                .from('v_so_billing_summary')
-                .select('*')
-                .eq('so_id', id)
-                .single();
-            if (billingSummaryData) setBillingSummary(billingSummaryData);
-
-            // Fetch Related Invoices
-            const { data: invoicesData } = await supabase
-                .from('invoices')
-                .select('id, invoice_number, date, grand_total, payment_status, billing_type')
-                .eq('so_id', id)
-                .order('date', { ascending: false });
-            if (invoicesData) setInvoices(invoicesData);
 
             // Fetch Delivery Progress
             const { data: deliveryProgressData } = await supabase
@@ -189,87 +171,6 @@ export const ViewSalesOrder = () => {
                             <p className="text-xs text-gray-500">{deliveryProgress.do_count} DO(s)</p>
                         </div>
                     </div>
-                </div>
-            )}
-
-            {/* Billing Summary Section */}
-            {billingSummary && (
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-lg border border-blue-200">
-                    <h2 className="text-xl font-bold text-gray-900 mb-4">📊 Billing Summary</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                        <div className="bg-white p-4 rounded-lg shadow-sm">
-                            <p className="text-sm text-gray-600 mb-1">SO Total Value</p>
-                            <p className="text-2xl font-bold text-gray-900">
-                                {billingSummary.so_total
-                                    ? `$${billingSummary.so_total.toLocaleString()}`
-                                    : billingSummary.total_billed > 0
-                                        ? `$${billingSummary.total_billed.toLocaleString()} (from invoices)`
-                                        : 'Calculate from Quote'}
-                            </p>
-                        </div>
-                        <div className="bg-white p-4 rounded-lg shadow-sm">
-                            <p className="text-sm text-gray-600 mb-1">Total Billed</p>
-                            <p className="text-2xl font-bold text-green-600">
-                                ${billingSummary.total_billed.toLocaleString()}
-                            </p>
-                            <p className="text-xs text-gray-500">{billingSummary.billed_percentage}%</p>
-                        </div>
-                        <div className="bg-white p-4 rounded-lg shadow-sm">
-                            <p className="text-sm text-gray-600 mb-1">Remaining</p>
-                            <p className="text-2xl font-bold text-orange-600">
-                                ${billingSummary.remaining_to_bill?.toLocaleString() || 'N/A'}
-                            </p>
-                        </div>
-                        <div className="bg-white p-4 rounded-lg shadow-sm">
-                            <p className="text-sm text-gray-600 mb-1">Status</p>
-                            <p className={`text-lg font-bold ${billingSummary.billing_status === 'Fully Billed' ? 'text-green-600' :
-                                billingSummary.billing_status === 'Partially Billed' ? 'text-yellow-600' :
-                                    'text-gray-600'
-                                }`}>
-                                {billingSummary.billing_status}
-                            </p>
-                            <p className="text-xs text-gray-500">{billingSummary.invoice_count} invoice(s)</p>
-                        </div>
-                    </div>
-
-                    {invoices.length > 0 && (
-                        <div className="bg-white p-4 rounded-lg">
-                            <h3 className="font-semibold text-gray-900 mb-3">Invoice History</h3>
-                            <table className="table w-full">
-                                <thead>
-                                    <tr>
-                                        <th className="text-left">Invoice #</th>
-                                        <th className="text-left">Date</th>
-                                        <th className="text-left">Type</th>
-                                        <th className="text-right">Amount</th>
-                                        <th className="text-center">Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {invoices.map(inv => (
-                                        <tr key={inv.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => navigate(`/invoices/${inv.id}`)}>
-                                            <td className="font-medium text-blue-600">{inv.invoice_number}</td>
-                                            <td>{new Date(inv.date).toLocaleDateString()}</td>
-                                            <td>
-                                                <span className="text-xs px-2 py-1 bg-gray-100 rounded">
-                                                    {inv.billing_type || 'itemized'}
-                                                </span>
-                                            </td>
-                                            <td className="text-right font-semibold">${inv.grand_total.toLocaleString()}</td>
-                                            <td className="text-center">
-                                                <span className={`px-2 py-1 text-xs rounded ${inv.payment_status === 'paid' ? 'bg-green-100 text-green-700' :
-                                                    inv.payment_status === 'partial' ? 'bg-yellow-100 text-yellow-700' :
-                                                        'bg-red-100 text-red-700'
-                                                    }`}>
-                                                    {inv.payment_status}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
                 </div>
             )}
 
