@@ -3,7 +3,8 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, ArrowLeft } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { supabase, Partner } from '../lib/supabase';
+import { Partner } from '../types';
+import { api } from '../lib/api';
 // import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 
@@ -79,7 +80,7 @@ export const InvoiceForm = () => {
     }, [id, searchParams]);
 
     const fetchCustomers = async () => {
-        const { data } = await supabase.from('partners').select('*').eq('type', 'customer').order('company_name');
+        const data = await api.get<Partner[]>('/partners?type=customer');
         if (data) setCustomers(data);
     };
 
@@ -89,12 +90,11 @@ export const InvoiceForm = () => {
             return;
         }
 
-        const { data } = await supabase.from('sales_orders')
-            .select('*, quotations!inner(customer_id)')
-            .eq('status', 'confirmed')
-            .eq('quotations.customer_id', customerId);
-
-        if (data) setSalesOrders(data);
+        const data = await api.get<any[]>('/sales-orders');
+        if (data) {
+            const filteredSO = data.filter(so => so.status === 'confirmed' && so.quotations?.customer_id === customerId);
+            setSalesOrders(filteredSO);
+        }
     };
 
     const handleCustomerChange = async (custId: string) => {
@@ -107,18 +107,10 @@ export const InvoiceForm = () => {
         setFormData(prev => ({ ...prev, so_id: soId }));
 
         // Fetch customer from SO → Quotation
-        const { data: so } = await supabase
-            .from('sales_orders')
-            .select('quotation_id')
-            .eq('id', soId)
-            .single();
+        const so = await api.get<any>(`/sales-orders/${soId}`);
 
         if (so && so.quotation_id) {
-            const { data: quotation } = await supabase
-                .from('quotations')
-                .select('customer_id')
-                .eq('id', so.quotation_id)
-                .single();
+            const quotation = await api.get<any>(`/quotations/${so.quotation_id}`);
 
             if (quotation) {
                 setFormData(prev => ({ ...prev, customer_id: quotation.customer_id, so_id: soId }));
@@ -126,10 +118,8 @@ export const InvoiceForm = () => {
         }
 
         // Fetch all DOs from this SO
-        const { data: dos } = await supabase
-            .from('delivery_orders')
-            .select('id, do_number')
-            .eq('so_id', soId);
+        const allDOs = await api.get<any[]>('/delivery-orders');
+        const dos = allDOs?.filter(d => d.so_id === soId) || [];
 
         if (!dos || dos.length === 0) {
             showToast('No delivery orders found for this SO', 'warning');
@@ -138,22 +128,22 @@ export const InvoiceForm = () => {
 
         // Fetch ALL items from ALL DOs
         const doIds = dos.map(d => d.id);
-        const { data: allDOItems } = await supabase
-            .from('delivery_order_items')
-            .select('*')
-            .in('do_id', doIds);
+        const allDOItems: any[] = [];
+        for (const doId of doIds) {
+            const doRecord = await api.get<any>(`/delivery-orders/${doId}`);
+            if (doRecord && doRecord.items) {
+                allDOItems.push(...doRecord.items);
+            }
+        }
 
-        if (allDOItems && allDOItems.length > 0) {
+        if (allDOItems.length > 0) {
             // Lookup prices from items master data
-            const descriptions = allDOItems.map(i => i.description).filter(Boolean);
-            const { data: masterItems } = await supabase
-                .from('items')
-                .select('description, price')
-                .in('description', descriptions);
+            const masterItems = await api.get<any[]>('/items');
 
             const priceMap = new Map();
             if (masterItems) {
                 masterItems.forEach(item => {
+                    if (item.name) priceMap.set(item.name, item.price);
                     if (item.description) priceMap.set(item.description, item.price);
                 });
             }
@@ -166,8 +156,8 @@ export const InvoiceForm = () => {
                 description: item.description || '',
                 quantity: item.quantity,
                 uom: item.uom || 'EA',
-                unit_price: priceMap.get(item.description) || 0,
-                total_price: (priceMap.get(item.description) || 0) * item.quantity
+                unit_price: priceMap.get(item.description) || priceMap.get(item.item_code) || 0,
+                total_price: (priceMap.get(item.description) || priceMap.get(item.item_code) || 0) * item.quantity
             })));
 
             // Set DO reference to all DO numbers
@@ -178,7 +168,7 @@ export const InvoiceForm = () => {
 
     const handleSOSelection = async (soId: string) => {
         // Load SO details
-        const { data: so } = await supabase.from('sales_orders').select('*, quotations(customer_id, subject)').eq('id', soId).single();
+        const so = await api.get<any>(`/sales-orders/${soId}`);
         if (so) {
             setFormData(prev => ({
                 ...prev,
@@ -186,11 +176,6 @@ export const InvoiceForm = () => {
                 customer_id: so.quotations?.customer_id || prev.customer_id,
                 subject: so.quotations?.subject || prev.subject
             }));
-
-            // If customer was not set, set it and fetch other SOs?
-            if (!formData.customer_id && so.quotations?.customer_id) {
-                // await fetchSalesOrders(so.quotations.customer_id); // Might loop if not careful
-            }
 
             // If Standard mode, maybe pull items?
             if (formData.pricing_mode === 'standard') {
@@ -200,42 +185,40 @@ export const InvoiceForm = () => {
     };
 
     const importItemsFromSO = async (soId: string) => {
-        const { data: items } = await supabase.from('sales_order_items').select('*').eq('so_id', soId);
+        const so = await api.get<any>(`/sales-orders/${soId}`);
+        const items = so?.items;
         if (items && items.length > 0) {
             // Lookup prices from items master data
-            const descriptions = items.map(i => i.description).filter(Boolean);
-            const { data: masterItems } = await supabase
-                .from('items')
-                .select('description, price')
-                .in('description', descriptions);
+            const masterItems = await api.get<any[]>('/items');
 
             const priceMap = new Map();
             if (masterItems) {
                 masterItems.forEach(item => {
+                    if (item.name) priceMap.set(item.name, item.price);
                     if (item.description) priceMap.set(item.description, item.price);
                 });
             }
 
-            setLineItems(items.map((i, idx) => ({
+            setLineItems(items.map((i: any, idx: number) => ({
                 id: `so-${idx}`,
                 item_code: '',
                 item_id: '',
                 description: i.description || '',
                 quantity: i.quantity,
                 uom: i.uom || 'EA',
-                unit_price: priceMap.get(i.description) || 0, // Auto-lookup from items table
-                total_price: (priceMap.get(i.description) || 0) * i.quantity
+                unit_price: priceMap.get(i.description) || priceMap.get(i.item_code) || 0, // Auto-lookup from items table
+                total_price: (priceMap.get(i.description) || priceMap.get(i.item_code) || 0) * i.quantity
             })));
         }
     };
 
     const handleDOSelection = async (doId: string) => {
         // Fetch DO details
-        const { data: doData } = await supabase.from('delivery_orders').select('*').eq('id', doId).single();
+        const doData = await api.get<any>(`/delivery-orders/${doId}`);
         if (!doData) return;
 
         // Fetch DO items
-        const { data: doItems } = await supabase.from('delivery_order_items').select('*').eq('do_id', doId);
+        const doItems = doData.items;
 
         if (doData) {
             setFormData(prev => ({
@@ -246,9 +229,9 @@ export const InvoiceForm = () => {
 
             // Get customer from SO if available
             if (doData.so_id) {
-                const { data: so } = await supabase.from('sales_orders').select('quotation_id').eq('id', doData.so_id).single();
+                const so = await api.get<any>(`/sales-orders/${doData.so_id}`);
                 if (so && so.quotation_id) {
-                    const { data: q } = await supabase.from('quotations').select('customer_id').eq('id', so.quotation_id).single();
+                    const q = await api.get<any>(`/quotations/${so.quotation_id}`);
                     if (q) {
                         setFormData(prev => ({ ...prev, customer_id: q.customer_id }));
                     }
@@ -259,28 +242,25 @@ export const InvoiceForm = () => {
         // Pre-populate line items from DO with price lookup
         if (doItems && doItems.length > 0) {
             // Lookup prices from items master data
-            const descriptions = doItems.map(i => i.description).filter(Boolean);
-            const { data: masterItems } = await supabase
-                .from('items')
-                .select('description, price')
-                .in('description', descriptions);
+            const masterItems = await api.get<any[]>('/items');
 
             const priceMap = new Map();
             if (masterItems) {
                 masterItems.forEach(item => {
+                    if (item.name) priceMap.set(item.name, item.price);
                     if (item.description) priceMap.set(item.description, item.price);
                 });
             }
 
-            setLineItems(doItems.map((item, idx) => ({
+            setLineItems(doItems.map((item: any, idx: number) => ({
                 id: `do-${idx}`,
                 item_code: item.item_code || '',
                 item_id: '',
                 description: item.description || '',
                 quantity: item.quantity,
                 uom: item.uom || 'EA',
-                unit_price: priceMap.get(item.description) || 0, // Auto-lookup from items table
-                total_price: (priceMap.get(item.description) || 0) * item.quantity
+                unit_price: priceMap.get(item.description) || priceMap.get(item.item_code) || 0, // Auto-lookup from items table
+                total_price: (priceMap.get(item.description) || priceMap.get(item.item_code) || 0) * item.quantity
             })));
             showToast(`Loaded ${doItems.length} items from Delivery Order with prices`, 'success');
         }
@@ -289,8 +269,8 @@ export const InvoiceForm = () => {
     const loadInvoice = async (invoiceId: string) => {
         setLoading(true);
         try {
-            const { data: inv, error } = await supabase.from('invoices').select('*').eq('id', invoiceId).single();
-            if (error) throw error;
+            const inv = await api.get<any>(`/invoices/${invoiceId}`);
+            if (!inv) throw new Error('Invoice not found');
 
             setFormData({
                 customer_id: inv.customer_id,
@@ -301,7 +281,7 @@ export const InvoiceForm = () => {
                 terms: inv.terms || '30 Days',
                 subject: inv.subject || '',
                 status: inv.payment_status || 'unpaid', // Database uses payment_status
-                pricing_mode: 'standard', // default
+                pricing_mode: inv.billing_type === 'milestone' ? 'milestone' : 'standard',
                 milestone_description: '',
                 milestone_amount: 0,
                 subtotal: inv.subtotal,
@@ -311,9 +291,9 @@ export const InvoiceForm = () => {
             });
 
             // Load Items
-            const { data: items } = await supabase.from('invoice_items').select('*').eq('invoice_id', invoiceId);
+            const items = inv.items;
             if (items) {
-                setLineItems(items.map((i) => ({
+                setLineItems(items.map((i: any) => ({
                     id: i.id,
                     item_code: i.item_code || '',
                     item_id: '',
@@ -396,32 +376,21 @@ export const InvoiceForm = () => {
                 discount: vals.discountVal,
                 tax: vals.taxVal, // Database column is 'tax', not 'tax_rate' or 'tax_amount'
                 grand_total: vals.total,
-            };
-
-            let invId = id;
-
-            if (isEditMode && id) {
-                const { error } = await supabase.from('invoices').update(invData).eq('id', id);
-                if (error) throw error;
-                await supabase.from('invoice_items').delete().eq('invoice_id', id);
-            } else {
-                const { data, error } = await supabase.from('invoices').insert([invData]).select().single();
-                if (error) throw error;
-                invId = data.id;
-            }
-
-            if (invId) {
-                const itemsToInsert = lineItems.map(i => ({
-                    invoice_id: invId,
+                
+                items: lineItems.map(i => ({
                     item_code: i.item_code || null,
                     description: i.description,
                     quantity: i.quantity,
                     uom: i.uom,
                     unit_price: i.unit_price,
                     total_price: i.total_price  // Match DB column
-                }));
-                const { error } = await supabase.from('invoice_items').insert(itemsToInsert);
-                if (error) throw error;
+                }))
+            };
+
+            if (isEditMode && id) {
+                await api.put(`/invoices/${id}`, invData);
+            } else {
+                await api.post('/invoices', invData);
             }
 
             showToast('Invoice saved', 'success');

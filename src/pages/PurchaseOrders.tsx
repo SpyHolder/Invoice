@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Plus, ShoppingCart, CheckCircle, Eye, Edit2, Trash2 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { supabase, PurchaseOrder } from '../lib/supabase';
+import { PurchaseOrder } from '../types';
+import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../contexts/ToastContext';
@@ -24,32 +25,31 @@ export const PurchaseOrders = () => {
         if (!user) return;
         setLoading(true);
 
-        let query = supabase
-            .from('purchase_orders')
-            .select('*, vendor:partners!vendor_id(company_name)')
-            .order('created_at', { ascending: false });
-
-        if (searchQuery) {
-            query = query.or(`po_number.ilike.%${searchQuery}%,quote_ref.ilike.%${searchQuery}%`);
+        try {
+            const data = await api.get<any[]>('/purchase-orders');
+            
+            let filteredOrds = data || [];
+            if (searchQuery) {
+                const lowerQuery = searchQuery.toLowerCase();
+                filteredOrds = filteredOrds.filter((po: any) => 
+                    po.po_number?.toLowerCase().includes(lowerQuery) || 
+                    po.quote_ref?.toLowerCase().includes(lowerQuery)
+                );
+            }
+            
+            setPurchaseOrders(filteredOrds);
+        } catch (error) {
+            console.error('Error fetching POs:', error);
+            showToast('Failed to fetch purchase orders', 'error');
+        } finally {
+            setLoading(false);
         }
-
-        const { data, error } = await query;
-
-        if (!error && data) {
-            setPurchaseOrders(data);
-        }
-        setLoading(false);
     };
 
     const markAsReceived = async (po: PurchaseOrder) => {
         try {
             // Only update PO status - no stock changes
-            const { error } = await supabase
-                .from('purchase_orders')
-                .update({ status: 'received' })
-                .eq('id', po.id);
-
-            if (error) throw error;
+            await api.put(`/purchase-orders/${po.id}`, { ...po, status: 'received' });
 
             showToast('Purchase order marked as received!', 'success');
             fetchPurchaseOrders();
@@ -61,20 +61,8 @@ export const PurchaseOrders = () => {
 
     const handleDelete = async (id: string) => {
         try {
-            // Delete PO items first (handled by cascade usually, but manual safety check)
-            const { error: itemsError } = await supabase.from('purchase_order_items').delete().eq('po_id', id);
-            if (itemsError) {
-                console.error('Error deleting items:', itemsError);
-                throw itemsError;
-            }
-
             // Delete PO
-            const { error } = await supabase.from('purchase_orders').delete().eq('id', id);
-
-            if (error) {
-                console.error('Error deleting PO:', error);
-                throw error;
-            }
+            await api.delete(`/purchase-orders/${id}`);
 
             showToast('Purchase order deleted successfully', 'success');
             fetchPurchaseOrders();

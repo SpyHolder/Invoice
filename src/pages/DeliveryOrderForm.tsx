@@ -3,7 +3,8 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, Package } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { supabase, SalesOrderItem, DeliveryOrderItem } from '../lib/supabase';
+import { SalesOrderItem, DeliveryOrderItem } from '../types';
+import { api } from '../lib/api';
 import { useToast } from '../contexts/ToastContext';
 
 interface DOItem extends DeliveryOrderItem {
@@ -60,78 +61,89 @@ export const DeliveryOrderForm = () => {
     }, [id, soIdParam]);
 
     const fetchSalesOrders = async () => {
-        const { data } = await supabase.from('sales_orders').select('id, so_number, customer_po_number').eq('status', 'confirmed').order('created_at', { ascending: false });
-        if (data) setSalesOrders(data);
+        const data = await api.get<any[]>('/sales-orders');
+        if (data) {
+            setSalesOrders(data.filter(so => so.status === 'confirmed'));
+        }
     };
 
     const handleSOSelection = async (soId: string) => {
         setFormData(prev => ({ ...prev, so_id: soId }));
 
-        const { data: items } = await supabase.from('sales_order_items').select('*').eq('so_id', soId);
+        try {
+            const so = await api.get<any>(`/sales-orders/${soId}`);
+            const items = so?.items;
 
-        if (items) {
-            let query = supabase.from('delivery_orders').select('id, do_number').eq('so_id', soId);
-            if (id) query = query.neq('id', id);
+            if (items) {
+                const allDOs = await api.get<any[]>('/delivery-orders');
+                let existingDOs = allDOs?.filter(d => d.so_id === soId) || [];
+                if (id) existingDOs = existingDOs.filter(d => d.id !== id);
 
-            const { data: existingDOs } = await query;
-
-            if (existingDOs && existingDOs.length > 0) {
-                const doIds = existingDOs.map(d => d.id);
-                const { data: deliveredItems } = await supabase.from('delivery_order_items').select('description, quantity').in('do_id', doIds);
-
-                const deliveredQtyMap = new Map<string, number>();
-                if (deliveredItems) {
-                    deliveredItems.forEach(item => {
-                        const desc = item.description?.trim().toLowerCase();
-                        if (desc) {
-                            deliveredQtyMap.set(desc, (deliveredQtyMap.get(desc) || 0) + (item.quantity || 0));
+                if (existingDOs.length > 0) {
+                    const deliveredQtyMap = new Map<string, number>();
+                    for (const d of existingDOs) {
+                        const doRecord = await api.get<any>(`/delivery-orders/${d.id}`);
+                        if (doRecord?.items) {
+                            doRecord.items.forEach((item: any) => {
+                                const desc = item.description?.trim().toLowerCase();
+                                if (desc) {
+                                    deliveredQtyMap.set(desc, (deliveredQtyMap.get(desc) || 0) + (item.quantity || 0));
+                                }
+                            });
                         }
-                    });
+                    }
+
+                    const itemsWithRemaining = items
+                        .map((item: any) => ({
+                            ...item,
+                            quantity: item.quantity - (deliveredQtyMap.get(item.description?.trim().toLowerCase() || '') || 0)
+                        }))
+                        .filter((item: any) => item.quantity > 0);
+
+                    setAvailableItems(itemsWithRemaining);
+
+                    if (itemsWithRemaining.length < items.length) {
+                        showToast(`${items.length - itemsWithRemaining.length} item(s) fully delivered. Showing remaining.`, 'info');
+                    }
+                } else {
+                    setAvailableItems(items);
                 }
 
-                const itemsWithRemaining = items
-                    .map(item => ({
-                        ...item,
-                        quantity: item.quantity - (deliveredQtyMap.get(item.description?.trim().toLowerCase() || '') || 0)
-                    }))
-                    .filter(item => item.quantity > 0);
+                const uniquePhases = Array.from(new Set(items.map((i: any) => i.phase_name).filter(Boolean) as string[]));
+                setAvailablePhases(uniquePhases);
+            }
 
-                setAvailableItems(itemsWithRemaining);
-
-                if (itemsWithRemaining.length < items.length) {
-                    showToast(`${items.length - itemsWithRemaining.length} item(s) fully delivered. Showing remaining.`, 'info');
+            // Fetch Customer shipping address
+            if (so?.quotation_id) {
+                const q = await api.get<any>(`/quotations/${so.quotation_id}`);
+                const partnerId = q?.customer_id;
+                if (partnerId) {
+                    const partners = await api.get<any[]>(`/partners`);
+                    const partner = partners?.find(p => p.id === partnerId);
+                    if (partner) {
+                        setFormData(prev => ({
+                            ...prev,
+                            shipping_address_snapshot: partner.shipping_address || partner.address || ''
+                        }));
+                    }
                 }
-            } else {
-                setAvailableItems(items);
             }
-
-            const uniquePhases = Array.from(new Set(items.map(i => i.phase_name).filter(Boolean) as string[]));
-            setAvailablePhases(uniquePhases);
-        }
-
-        // Fetch Customer shipping address
-        const { data: so } = await supabase.from('sales_orders').select('quotation_id').eq('id', soId).single();
-        if (so?.quotation_id) {
-            const { data: q } = await supabase.from('quotations').select('customer_id, partners(address, shipping_address)').eq('id', so.quotation_id).single();
-            if (q?.partners) {
-                setFormData(prev => ({
-                    ...prev,
-                    shipping_address_snapshot: (q.partners as any).shipping_address || (q.partners as any).address || ''
-                }));
-            }
+        } catch (error) {
+            console.error('Error handling SO selection:', error);
+            showToast('Failed to load Sales Order details', 'error');
         }
     };
 
     const loadDeliveryOrder = async (doId: string) => {
         setLoading(true);
         try {
-            const { data, error } = await supabase.from('delivery_orders').select('*').eq('id', doId).single();
-            if (error) throw error;
+            const data = await api.get<any>(`/delivery-orders/${doId}`);
+            if (!data) throw new Error('Not found');
 
             setFormData({
                 so_id: data.so_id || '',
                 do_number: data.do_number,
-                date: data.date,
+                date: data.date ? new Date(data.date).toISOString().split('T')[0] : '',
                 subject: data.subject || '',
                 terms: data.terms || '',
                 requestor_name: data.requestor_name || '',
@@ -139,12 +151,12 @@ export const DeliveryOrderForm = () => {
                 customer_id: '',
             });
 
-            const { data: items } = await supabase.from('delivery_order_items').select('*').eq('do_id', doId);
+            const items = data.items;
             if (items) {
                 const grouped: Record<string, DOItem[]> = {};
                 const ungrouped: DOItem[] = [];
 
-                items.forEach(item => {
+                items.forEach((item: any) => {
                     const groupName = item.group_name;
                     if (groupName && groupName.trim() !== '' && groupName !== 'Ungrouped') {
                         if (!grouped[groupName]) grouped[groupName] = [];
@@ -322,26 +334,22 @@ export const DeliveryOrderForm = () => {
                 shipping_address_snapshot: formData.shipping_address_snapshot
             };
 
-            let doId = id;
+            const allItems = [
+                ...groups.flatMap(g => g.items.map(i => ({ item_code: i.item_code, description: i.description, quantity: i.quantity, uom: i.uom, group_name: g.name }))),
+                ...ungroupedItems.map(i => ({ item_code: i.item_code, description: i.description, quantity: i.quantity, uom: i.uom, group_name: null }))
+            ];
 
             if (isEditMode && id) {
-                await supabase.from('delivery_orders').update(doData).eq('id', id);
-                await supabase.from('delivery_order_items').delete().eq('do_id', id);
+                await api.put(`/delivery-orders/${id}`, {
+                    ...doData,
+                    items: allItems
+                });
             } else {
-                const { data, error } = await supabase.from('delivery_orders').insert([{ ...doData, do_number: 'DO-' + Date.now() }]).select().single();
-                if (error) throw error;
-                doId = data.id;
-            }
-
-            if (doId) {
-                const allItems = [
-                    ...groups.flatMap(g => g.items.map(i => ({ do_id: doId, item_code: i.item_code, description: i.description, quantity: i.quantity, uom: i.uom, group_name: g.name }))),
-                    ...ungroupedItems.map(i => ({ do_id: doId, item_code: i.item_code, description: i.description, quantity: i.quantity, uom: i.uom, group_name: null }))
-                ];
-
-                if (allItems.length > 0) {
-                    await supabase.from('delivery_order_items').insert(allItems);
-                }
+                await api.post('/delivery-orders', { 
+                    ...doData, 
+                    do_number: 'DO-' + Date.now(),
+                    items: allItems
+                });
             }
 
             showToast('Delivery Order saved', 'success');

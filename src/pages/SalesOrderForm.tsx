@@ -4,7 +4,8 @@ import { Plus, Trash2, ArrowLeft, FileText, User, Hash, Save, CheckCircle, Calen
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { supabase, Partner } from '../lib/supabase';
+import { Partner } from '../types';
+import { api } from '../lib/api';
 import { processSOConfirmation } from '../lib/stockService';
 import { useToast } from '../contexts/ToastContext';
 import { Badge } from '../components/ui/Badge';
@@ -73,34 +74,33 @@ export const SalesOrderForm = () => {
     }, [id, quotationIdParam]);
 
     const fetchCustomers = async () => {
-        const { data } = await supabase.from('partners').select('*').eq('type', 'customer').order('company_name');
+        const data = await api.get<Partner[]>('/partners?type=customer');
         if (data) setCustomers(data);
     };
 
     const fetchQuotations = async () => {
-        const { data } = await supabase.from('quotations').select('id, quote_number, subject').order('created_at', { ascending: false });
+        const data = await api.get<any[]>('/quotations');
         if (data) setQuotations(data);
     };
 
     const loadFromQuotation = async (quoteId: string) => {
-        const { data: quote } = await supabase.from('quotations').select('*').eq('id', quoteId).single();
-        if (quote) {
-            setFormData(prev => ({
-                ...prev,
-                customer_id: quote.customer_id,
-                quotation_id: quote.id,
-            }));
-
-            const { data: quoteItems } = await supabase.from('quotation_items').select('*').eq('quotation_id', quoteId);
-            if (quoteItems) {
-                const mappedItems = quoteItems.map((qi, idx) => ({
-                    id: `q-item-${idx}`,
-                    description: qi.item_description || '',
-                    quantity: qi.quantity,
-                    uom: qi.uom || 'EA',
+        try {
+            const quote = await api.get<any>(`/quotations/${quoteId}`);
+            if (quote) {
+                setFormData(prev => ({
+                    ...prev,
+                    customer_id: quote.customer_id,
+                    quotation_id: quote.id,
                 }));
 
-                if (mappedItems.length > 0) {
+                if (quote.items && quote.items.length > 0) {
+                    const mappedItems = quote.items.map((qi: any, idx: number) => ({
+                        id: `q-item-${idx}`,
+                        description: qi.item_description || '',
+                        quantity: qi.quantity,
+                        uom: qi.uom || 'EA',
+                    }));
+
                     setPhases([{
                         id: 'phase-1',
                         name: '01 Phase',
@@ -108,37 +108,39 @@ export const SalesOrderForm = () => {
                     }]);
                 }
             }
+        } catch (error) {
+            console.error('Error loading quotation:', error);
+            showToast('Failed to load quotation details', 'error');
         }
     };
 
     const loadSalesOrder = async (soId: string) => {
         setLoading(true);
         try {
-            const { data: so, error } = await supabase.from('sales_orders').select('*').eq('id', soId).single();
-            if (error) throw error;
+            const so = await api.get<any>(`/sales-orders/${soId}`);
+            if (!so) throw new Error('Sales order not found');
 
             setFormData({
                 quotation_id: so.quotation_id || '',
                 so_number: so.so_number || '',
                 customer_po_number: so.customer_po_number || '',
-                project_schedule_date: so.project_schedule_date || '',
+                project_schedule_date: so.project_schedule_date ? new Date(so.project_schedule_date).toISOString().split('T')[0] : '',
                 status: so.status,
                 customer_id: '',
             });
 
             if (so.quotation_id) {
-                const { data: q } = await supabase.from('quotations').select('customer_id').eq('id', so.quotation_id).single();
+                const q = await api.get<any>(`/quotations/${so.quotation_id}`);
                 if (q) setFormData(prev => ({ ...prev, customer_id: q.customer_id }));
             }
 
-            const { data: items } = await supabase.from('sales_order_items').select('*').eq('so_id', soId);
-            if (items) {
+            if (so.items && so.items.length > 0) {
                 const grouped: Record<string, LineItem[]> = {};
-                items.forEach(item => {
+                so.items.forEach((item: any) => {
                     const p = item.phase_name || 'Unspecified';
                     if (!grouped[p]) grouped[p] = [];
                     grouped[p].push({
-                        id: item.id,
+                        id: item.id || `item-${Date.now()}-${Math.random()}`,
                         description: item.description || '',
                         quantity: item.quantity,
                         uom: item.uom || 'EA',
@@ -239,49 +241,41 @@ export const SalesOrderForm = () => {
 
         setLoading(true);
         try {
+            const flatItems = phases.flatMap(p => p.items.map(i => ({
+                phase_name: p.name,
+                description: i.description,
+                quantity: i.quantity,
+                uom: i.uom,
+                qty_backordered: 0,
+                qty_reserved: 0
+            })));
+
             const soData = {
                 quotation_id: formData.quotation_id || null,
                 customer_po_number: formData.customer_po_number,
                 project_schedule_date: formData.project_schedule_date,
-                status: status
+                status: status,
+                items: flatItems
             };
 
             let soId = id;
 
             if (isEditMode && id) {
-                const { error } = await supabase.from('sales_orders').update(soData).eq('id', id);
-                if (error) throw error;
-                await supabase.from('sales_order_items').delete().eq('so_id', id);
+                await api.put(`/sales-orders/${id}`, soData);
             } else {
-                const { data, error } = await supabase.from('sales_orders').insert([{
+                const soNum = 'SO-' + Date.now();
+                const res = await api.post<any>('/sales-orders', {
                     ...soData,
-                    so_number: 'SO-' + Date.now()
-                }]).select().single();
-
-                if (error) throw error;
-                soId = data.id;
+                    so_number: soNum
+                });
+                soId = res.id;
 
                 if (formData.quotation_id) {
-                    await supabase
-                        .from('quotations')
-                        .update({ status: 'converted' })
-                        .eq('id', formData.quotation_id);
+                    await api.put(`/quotations/${formData.quotation_id}`, { status: 'converted' });
                 }
             }
 
             if (soId) {
-                const flatItems = phases.flatMap(p => p.items.map(i => ({
-                    so_id: soId,
-                    phase_name: p.name,
-                    description: i.description,
-                    quantity: i.quantity,
-                    uom: i.uom
-                })));
-
-                if (flatItems.length > 0) {
-                    const { error } = await supabase.from('sales_order_items').insert(flatItems);
-                    if (error) throw error;
-                }
 
                 if (status === 'confirmed') {
                     const stockResult = await processSOConfirmation(soId);

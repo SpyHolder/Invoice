@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import { DeliveryOrder, DeliveryOrderItem, Partner, Company } from '../lib/supabase';
+import { DeliveryOrder, DeliveryOrderItem, Partner, Company } from '../types';
 
 interface DeliveryOrderTemplateProps {
     doData: DeliveryOrder;

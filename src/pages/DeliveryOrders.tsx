@@ -4,7 +4,7 @@ import { Plus, Eye, Edit, FileText } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { SearchInput } from '../components/ui/SearchInput';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { useToast } from '../contexts/ToastContext';
 
 export const DeliveryOrders = () => {
@@ -21,29 +21,18 @@ export const DeliveryOrders = () => {
     const fetchOrders = async () => {
         setLoading(true);
         try {
-            let query = supabase
-                .from('delivery_orders')
-                .select(`
-                    *,
-                    sales_orders (
-                        so_number,
-                        quotations (
-                            partners (
-                                company_name
-                            )
-                        )
-                    )
-                `)
-                .order('created_at', { ascending: false });
-
+            const data = await api.get<any[]>('/delivery-orders');
+            
+            let filteredOrders = data || [];
             if (searchQuery) {
-                query = query.or(`do_number.ilike.%${searchQuery}%,subject.ilike.%${searchQuery}%`);
+                const lowerQuery = searchQuery.toLowerCase();
+                filteredOrders = filteredOrders.filter(doRecord => 
+                    doRecord.do_number?.toLowerCase().includes(lowerQuery) || 
+                    doRecord.subject?.toLowerCase().includes(lowerQuery)
+                );
             }
-
-            const { data, error } = await query;
-
-            if (error) throw error;
-            setOrders(data || []);
+            
+            setOrders(filteredOrders);
         } catch (error) {
             console.error('Error fetching DOs:', error);
             showToast('Failed to fetch delivery orders', 'error');
@@ -53,19 +42,14 @@ export const DeliveryOrders = () => {
     };
 
     // When DO is delivered, increase stock (items successfully shipped means stock is back to available)
-    const updateStatus = async (doId: string, newStatus: string, previousStatus: string) => {
+    const updateStatus = async (doRecord: any, newStatus: string, previousStatus: string) => {
         try {
             // Update DO status
-            const { error } = await supabase
-                .from('delivery_orders')
-                .update({ status: newStatus })
-                .eq('id', doId);
-
-            if (error) throw error;
+            await api.put(`/delivery-orders/${doRecord.id}`, { ...doRecord, status: newStatus });
 
             // When marked as delivered, increase stock for delivered items
             if (newStatus === 'delivered' && previousStatus !== 'delivered') {
-                await restoreStockForDO(doId);
+                await restoreStockForDO(doRecord.id);
                 showToast(`Delivery Order marked as delivered! Stock restored.`, 'success');
             } else if (previousStatus === 'delivered' && newStatus !== 'delivered') {
                 // If reverting from delivered, we might want to deduct again
@@ -86,33 +70,21 @@ export const DeliveryOrders = () => {
     const restoreStockForDO = async (doId: string) => {
         try {
             // Get DO items
-            const { data: doItems, error: doError } = await supabase
-                .from('delivery_order_items')
-                .select('description, quantity')
-                .eq('do_id', doId);
-
-            if (doError || !doItems) return;
+            const doRecord = await api.get<any>(`/delivery-orders/${doId}`);
+            const doItems = doRecord?.items;
+            
+            if (!doItems) return;
 
             for (const doItem of doItems) {
                 if (!doItem.description || !doItem.quantity) continue;
 
                 // Find matching inventory item by name
-                const { data: invItem } = await supabase
-                    .from('items')
-                    .select('id, stock, name')
-                    .ilike('name', `%${doItem.description}%`)
-                    .maybeSingle();
+                const items = await api.get<any[]>(`/items`);
+                const invItem = items?.find(i => i.name?.toLowerCase().includes(doItem.description.toLowerCase()));
 
                 if (invItem) {
                     // Increase stock
-                    const { error: updateError } = await supabase
-                        .from('items')
-                        .update({ stock: (invItem.stock || 0) + doItem.quantity })
-                        .eq('id', invItem.id);
-
-                    if (updateError) {
-                        console.error('Error updating stock for:', doItem.description);
-                    }
+                    await api.put(`/items/${invItem.id}`, { stock: (invItem.stock || 0) + doItem.quantity });
                 }
             }
         } catch (error) {
@@ -170,9 +142,9 @@ export const DeliveryOrders = () => {
                                     orders.map((doRecord) => (
                                         <tr key={doRecord.id} className="hover:bg-gray-50/50 transition-colors">
                                             <td className="py-3 px-4 text-sm font-medium text-gray-900">{doRecord.do_number}</td>
-                                            <td className="py-3 px-4 text-sm text-gray-600">{doRecord.sales_orders?.so_number || '-'}</td>
+                                            <td className="py-3 px-4 text-sm text-gray-600">{doRecord.so_number || '-'}</td>
                                             <td className="py-3 px-4 text-sm text-gray-600">
-                                                {doRecord.sales_orders?.quotations?.partners?.company_name || '-'}
+                                                {doRecord.customer_name || '-'}
                                             </td>
                                             <td className="py-3 px-4 text-sm text-gray-600">
                                                 {new Date(doRecord.date).toLocaleDateString()}
@@ -181,7 +153,7 @@ export const DeliveryOrders = () => {
                                             <td className="py-3 px-4">
                                                 <select
                                                     value={doRecord.status || 'pending'}
-                                                    onChange={(e) => updateStatus(doRecord.id, e.target.value, doRecord.status || 'pending')}
+                                                    onChange={(e) => updateStatus(doRecord, e.target.value, doRecord.status || 'pending')}
                                                     onClick={(e) => e.stopPropagation()}
                                                     className={`px-2.5 py-1 rounded-full text-xs font-semibold cursor-pointer border-0 ring-1 ring-inset focus:ring-2 focus:ring-blue-500 outline-none ${doRecord.status === 'delivered'
                                                         ? 'bg-green-50 text-green-700 ring-green-600/20'

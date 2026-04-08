@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, FileText } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { supabase, DeliveryOrder, DeliveryOrderItem, Partner, Company } from '../lib/supabase';
+import { DeliveryOrder, DeliveryOrderItem, Partner, Company } from '../types';
+import { api } from '../lib/api';
 import { DeliveryOrderTemplate } from '../components/DeliveryOrderTemplate';
 import { useReactToPrint } from 'react-to-print';
 
@@ -32,54 +33,37 @@ export const ViewDeliveryOrder = () => {
         setLoading(true);
         try {
             // Fetch DO
-            const { data: doRecord, error: doError } = await supabase
-                .from('delivery_orders')
-                .select('*')
-                .eq('id', id)
-                .single();
-            if (doError) throw doError;
+            const doRecord = await api.get<any>(`/delivery-orders/${id}`);
+            if (!doRecord) throw new Error('Delivery Order not found');
             setDoData(doRecord);
 
             // Fetch Items
-            const { data: itemsData, error: itemsError } = await supabase
-                .from('delivery_order_items')
-                .select('*')
-                .eq('do_id', id);
-            if (itemsError) throw itemsError;
-            setItems(itemsData || []);
+            setItems(doRecord.items || []);
 
             // Fetch Customer, Customer PO, and Quote Ref via SO -> Quotation
             if (doRecord.so_id) {
-                const { data: so } = await supabase
-                    .from('sales_orders')
-                    .select('quotation_id, customer_po_number')
-                    .eq('id', doRecord.so_id)
-                    .single();
+                try {
+                    const so = await api.get<any>(`/sales-orders/${doRecord.so_id}`);
+                    if (so) {
+                        // Set Customer PO
+                        setCustomerPO(so.customer_po_number);
 
-                if (so) {
-                    // Set Customer PO
-                    setCustomerPO(so.customer_po_number);
+                        if (so.quotation_id) {
+                            const q = await api.get<any>(`/quotations/${so.quotation_id}`);
+                            if (q) {
+                                // Set Quote Ref
+                                setQuoteRef(q.quote_number);
 
-                    if (so.quotation_id) {
-                        const { data: q } = await supabase
-                            .from('quotations')
-                            .select('customer_id, quote_number')
-                            .eq('id', so.quotation_id)
-                            .single();
-
-                        if (q) {
-                            // Set Quote Ref
-                            setQuoteRef(q.quote_number);
-
-                            // Fetch Customer
-                            const { data: cust } = await supabase
-                                .from('partners')
-                                .select('*')
-                                .eq('id', q.customer_id)
-                                .single();
-                            if (cust) setCustomer(cust);
+                                // Fetch Customer
+                                if (q.customer_id) {
+                                    const cust = await api.get<any>(`/partners/${q.customer_id}`);
+                                    if (cust) setCustomer(cust);
+                                }
+                            }
                         }
                     }
+                } catch (e) {
+                    console.error('Error fetching SO related data', e);
                 }
             } else {
                 // If created standalone? How to link customer?
@@ -88,15 +72,17 @@ export const ViewDeliveryOrder = () => {
             }
 
             // Fetch Company Info
-            const { data: companyData } = await supabase
-                .from('companies')
-                .select('*')
-                .limit(1)
-                .single();
-            if (companyData) setCompany(companyData);
+            try {
+                const companies = await api.get<any[]>('/companies');
+                if (companies && companies.length > 0) {
+                    setCompany(companies[0]);
+                }
+            } catch (e) {
+                console.error('Error fetching company', e);
+            }
 
         } catch (error) {
-            console.error(error);
+            console.error('Error fetching DO details', error);
         } finally {
             setLoading(false);
         }

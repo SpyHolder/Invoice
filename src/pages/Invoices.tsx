@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Plus, FileText, Eye, Edit2, Trash2 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { supabase, Invoice } from '../lib/supabase';
+import { Invoice } from '../types';
+import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../contexts/ToastContext';
@@ -25,43 +26,40 @@ export const Invoices = () => {
         if (!user) return;
         setLoading(true);
 
-        const query = supabase
-            .from('invoices')
-            .select(`
-        *,
-        customer:partners!customer_id(company_name)
-      `)
-            .order('created_at', { ascending: false });
+        try {
+            const data = await api.get<any[]>('/invoices');
+            let filteredInvoices = data || [];
+            
+            if (searchQuery) {
+                const lowerQuery = searchQuery.toLowerCase();
+                filteredInvoices = filteredInvoices.filter((inv: any) => 
+                    inv.invoice_number?.toLowerCase().includes(lowerQuery)
+                );
+            }
 
-        if (searchQuery) {
-            query.ilike('invoice_number', `%${searchQuery}%`);
+            setInvoices(filteredInvoices as Invoice[]);
+        } catch (error) {
+            console.error('Error fetching invoices:', error);
+            showToast('Failed to fetch invoices', 'error');
+        } finally {
+            setLoading(false);
         }
-
-        const { data, error } = await query;
-
-        if (!error && data) {
-            setInvoices(data as Invoice[]);
-        }
-        setLoading(false);
     };
 
     const toggleStatus = async (invoice: Invoice) => {
         const newStatus = invoice.payment_status === 'paid' ? 'unpaid' : 'paid';
-        await supabase
-            .from('invoices')
-            .update({ payment_status: newStatus })  // Database column is payment_status
-            .eq('id', invoice.id);
-        fetchInvoices();
+        try {
+            await api.put(`/invoices/${invoice.id}`, { ...invoice, payment_status: newStatus });
+            fetchInvoices();
+        } catch (error) {
+            console.error('Error updating status:', error);
+            showToast('Failed to update status', 'error');
+        }
     };
 
     const handleDelete = async (id: string) => {
         try {
-            // Delete invoice items first
-            await supabase.from('invoice_items').delete().eq('invoice_id', id);
-            // Delete invoice
-            const { error } = await supabase.from('invoices').delete().eq('id', id);
-
-            if (error) throw error;
+            await api.delete(`/invoices/${id}`);
 
             showToast('Invoice deleted successfully', 'success');
             fetchInvoices();
@@ -137,7 +135,7 @@ export const Invoices = () => {
                                             </span>
                                         </td>
                                         <td className="py-3 px-4">
-                                            <span className="font-medium text-gray-900">{invoice.customer?.company_name}</span>
+                                            <span className="font-medium text-gray-900">{(invoice as any).customer_name || invoice.customer?.company_name || '-'}</span>
                                         </td>
                                         <td className="py-3 px-4 text-sm text-gray-600">
                                             {new Date(invoice.date).toLocaleDateString()}

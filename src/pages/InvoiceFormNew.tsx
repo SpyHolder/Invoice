@@ -3,7 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Check } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { supabase, Partner, DeliveryOrder } from '../lib/supabase';
+import { Partner, DeliveryOrder } from '../types';
+import { api } from '../lib/api';
 import { useToast } from '../contexts/ToastContext';
 
 export const InvoiceFormNew = () => {
@@ -47,23 +48,29 @@ export const InvoiceFormNew = () => {
         }
 
         // Fetch all items from selected DOs
-        const { data: allDOItems } = await supabase
-            .from('delivery_order_items')
-            .select('*, delivery_orders(do_number, subject)')
-            .in('do_id', doIds);
+        const allDOItems: any[] = [];
+        const doInfos = new Map();
+        for (const doId of doIds) {
+            const doRecord = await api.get<any>(`/delivery-orders/${doId}`);
+            if (doRecord) {
+                doInfos.set(doId, doRecord);
+                if (doRecord.items) {
+                    doRecord.items.forEach((item: any) => {
+                        allDOItems.push({ ...item, do_id: doId });
+                    });
+                }
+            }
+        }
 
-        if (!allDOItems) return;
+        if (allDOItems.length === 0) return;
 
         // Lookup prices
-        const descriptions = allDOItems.map(i => i.description).filter(Boolean);
-        const { data: masterItems } = await supabase
-            .from('items')
-            .select('description, price')
-            .in('description', descriptions);
-
+        const masterItems = await api.get<any[]>('/items');
+        
         const priceMap = new Map();
         if (masterItems) {
-            masterItems.forEach(item => {
+            masterItems.forEach((item: any) => {
+                if (item.name) priceMap.set(item.name, item.price);
                 if (item.description) priceMap.set(item.description, item.price);
             });
         }
@@ -72,7 +79,7 @@ export const InvoiceFormNew = () => {
         const itemsByDO = doIds
             .map((doId, idx) => {
                 const doItems = allDOItems.filter(item => item.do_id === doId);
-                const doInfo = doItems[0]?.delivery_orders;
+                const doInfo = doInfos.get(doId);
 
                 return {
                     section_number: idx + 1,
@@ -81,11 +88,12 @@ export const InvoiceFormNew = () => {
                     subject: doInfo?.subject || '',
                     items: doItems.map(item => ({
                         item_code: item.item_code || '',
+                        group_name: item.group_name || item.item_code || '',
                         description: item.description || '',
                         quantity: item.quantity,
                         uom: item.uom || 'EA',
-                        unit_price: priceMap.get(item.description) || 0,
-                        total_price: (priceMap.get(item.description) || 0) * item.quantity
+                        unit_price: priceMap.get(item.description) || priceMap.get(item.item_code) || 0,
+                        total_price: (priceMap.get(item.description) || priceMap.get(item.item_code) || 0) * item.quantity
                     }))
                 };
             })
@@ -105,27 +113,21 @@ export const InvoiceFormNew = () => {
         }
 
         // Fetch only delivered DOs
-        const { data } = await supabase
-            .from('delivery_orders')
-            .select('*')
-            .eq('so_id', soId)
-            .eq('status', 'delivered')
-            .order('created_at');
+        const data = await api.get<DeliveryOrder[]>('/delivery-orders');
+        const deliveredDOs = data ? data.filter(d => d.so_id === soId && d.status === 'delivered') : [];
 
-        if (data) {
+        if (deliveredDOs.length > 0) {
             // Get already-invoiced DO IDs to exclude (prevent double billing)
-            const { data: invoicedSections } = await supabase
-                .from('invoice_delivery_sections')
-                .select('do_id');
+            const invoicedSections = await api.get<any[]>('/invoices/sections/all');
 
             const invoicedDoIds = new Set(invoicedSections?.map(s => s.do_id) || []);
 
             // Filter out already-invoiced DOs
-            const unbilledDOs = data.filter(d => !invoicedDoIds.has(d.id));
+            const unbilledDOs = deliveredDOs.filter(d => !invoicedDoIds.has(d.id));
             setDeliveryOrders(unbilledDOs);
 
             if (autoSelect && unbilledDOs.length > 0) {
-                const doIds = unbilledDOs.map(d => d.id).filter(Boolean);
+                const doIds = unbilledDOs.map(d => d.id).filter(Boolean) as string[];
                 setSelectedDOs(doIds);
                 await updatePreview(doIds);
             }
@@ -133,11 +135,7 @@ export const InvoiceFormNew = () => {
     }, [updatePreview]);
 
     const fetchCustomers = useCallback(async () => {
-        const { data } = await supabase
-            .from('partners')
-            .select('*')
-            .eq('type', 'customer')
-            .order('company_name');
+        const data = await api.get<Partner[]>('/partners?type=customer');
         if (data) setCustomers(data);
     }, []);
 
@@ -147,13 +145,12 @@ export const InvoiceFormNew = () => {
             return;
         }
 
-        const { data } = await supabase
-            .from('sales_orders')
-            .select('*, quotations!inner(customer_id, quotation_number, subject)')
-            .eq('status', 'confirmed')
-            .eq('quotations.customer_id', customerId);
-
-        if (data) setSalesOrders(data);
+        const data = await api.get<any[]>('/sales-orders');
+        if (data) {
+            // Filter by customer_id and status
+            const filteredSO = data.filter(so => so.status === 'confirmed' && so.customer_id === customerId);
+            setSalesOrders(filteredSO);
+        }
     }, []);
 
     // ---------------------------------------------------------------
@@ -164,14 +161,10 @@ export const InvoiceFormNew = () => {
         setFormData(prev => ({ ...prev, so_id: soId }));
 
         // Fetch customer from SO
-        const { data: so } = await supabase
-            .from('sales_orders')
-            .select('quotations(customer_id, subject)')
-            .eq('id', soId)
-            .single();
+        const so = await api.get<any>(`/sales-orders/${soId}`);
 
-        if (so && so.quotations) {
-            const quotation = Array.isArray(so.quotations) ? so.quotations[0] : so.quotations;
+        if (so && so.quotation_id) {
+            const quotation = await api.get<any>(`/quotations/${so.quotation_id}`);
             if (quotation) {
                 setFormData(prev => ({
                     ...prev,
@@ -267,18 +260,16 @@ export const InvoiceFormNew = () => {
             // FIX 5: Ganti `count` dengan query `max` untuk menghindari
             // race condition pada pembuatan invoice number.
             // -------------------------------------------------------
-            const { data: lastInvoice } = await supabase
-                .from('invoices')
-                .select('invoice_number')
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .single();
-
+            const allInvoices = await api.get<any[]>('/invoices');
+            
             let nextSeq = 1;
-            if (lastInvoice?.invoice_number) {
-                const parts = lastInvoice.invoice_number.split('-');
-                const lastNum = parseInt(parts[parts.length - 1], 10);
-                if (!isNaN(lastNum)) nextSeq = lastNum + 1;
+            if (allInvoices && allInvoices.length > 0) {
+                const lastInvoice = allInvoices[0];
+                if (lastInvoice?.invoice_number) {
+                    const parts = lastInvoice.invoice_number.split('-');
+                    const lastNum = parseInt(parts[parts.length - 1], 10);
+                    if (!isNaN(lastNum)) nextSeq = lastNum + 1;
+                }
             }
             const invoiceNumber = `CNK-INV-${String(nextSeq).padStart(8, '0')}`;
 
@@ -298,23 +289,19 @@ export const InvoiceFormNew = () => {
                 invoice_type: 'do_based',
                 total_sections: selectedDOs.length,
                 notes: formData.notes,
+                delivery_sections: previewItems.map(p => ({
+                    do_id: p.do_id,
+                    section_number: p.section_number,
+                    section_label: p.subject,
+                    temp_id: `temp-${p.do_id}`
+                })),
+                items: previewItems.flatMap(p => p.items.map((i: any) => ({
+                    ...i,
+                    temp_section_id: `temp-${p.do_id}`
+                })))
             };
 
-            const { data, error } = await supabase
-                .from('invoices')
-                .insert([invoiceData])
-                .select()
-                .single();
-
-            if (error) throw error;
-
-            // Use database function to populate from DOs
-            const { error: funcError } = await supabase.rpc('populate_invoice_from_dos', {
-                p_invoice_id: data.id,
-                p_do_ids: selectedDOs
-            });
-
-            if (funcError) throw funcError;
+            const data = await api.post<any>('/invoices', invoiceData);
 
             showToast('Invoice created successfully!', 'success');
             navigate(`/invoices/${data.id}`);

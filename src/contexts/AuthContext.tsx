@@ -1,12 +1,18 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, AuthError } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
+
+interface User {
+    id: string;
+    email: string;
+    full_name?: string;
+    company_name?: string;
+}
 
 interface AuthContextType {
     user: User | null;
     loading: boolean;
-    signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
-    signUp: (email: string, password: string, fullName: string, companyName: string) => Promise<{ error: AuthError | null }>;
+    signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+    signUp: (email: string, password: string, fullName: string, companyName: string) => Promise<{ error: Error | null }>;
     signOut: () => Promise<void>;
 }
 
@@ -25,72 +31,58 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Check active session
+        // Check active session on load
         const checkSession = async () => {
-            try {
-                const { data: { session } } = await supabase.auth.getSession();
-                setUser(session?.user ?? null);
-            } catch (error) {
-                console.error('Error checking session:', error);
-            } finally {
-                setLoading(false);
+            const token = localStorage.getItem('invoice_ppc_token');
+            if (token) {
+                try {
+                    const res = await api.get<any>('/auth/me');
+                    const profile = res.user;
+                    setUser({
+                        id: profile.id,
+                        email: profile.email,
+                        full_name: profile.full_name,
+                        company_name: profile.company_name
+                    });
+                } catch (error) {
+                    console.error('Error checking session:', error);
+                    localStorage.removeItem('invoice_ppc_token');
+                }
             }
+            setLoading(false);
         };
 
         checkSession();
-
-        // Listen for auth changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            setUser(session?.user ?? null);
-            setLoading(false);
-        });
-
-        return () => {
-            subscription.unsubscribe();
-        };
     }, []);
 
     const signIn = async (email: string, password: string) => {
         try {
-            const { error } = await supabase.auth.signInWithPassword({
-                email,
-                password,
+            const res = await api.post<{token: string, user: any}>('/auth/login', { email, password });
+            localStorage.setItem('invoice_ppc_token', res.token);
+            setUser({
+                id: res.user.id,
+                email: res.user.email,
+                full_name: res.user.full_name,
+                company_name: res.user.company_name
             });
-            return { error };
-        } catch (error) {
-            return { error: error as AuthError };
+            return { error: null };
+        } catch (error: any) {
+             return { error: new Error(error.message || 'Login failed') };
         }
     };
 
     const signUp = async (email: string, password: string, fullName: string, companyName: string) => {
         try {
-            // Create the auth user with metadata (trigger will create profile automatically)
-            const { error } = await supabase.auth.signUp({
-                email,
-                password,
-                options: {
-                    data: {
-                        full_name: fullName,
-                        company_name: companyName,
-                    },
-                    // Redirect URL after email confirmation
-                    emailRedirectTo: `${window.location.origin}/login`,
-                },
-            });
-
-            if (error) return { error };
-
-            // No need to manually insert user_profiles - the database trigger handles it!
-            // The trigger function will automatically create the profile using the metadata
-
+            await api.post('/auth/register', { email, password, fullName, companyName });
             return { error: null };
-        } catch (error) {
-            return { error: error as AuthError };
+        } catch (error: any) {
+            return { error: new Error(error.message || 'Registration failed') };
         }
     };
 
     const signOut = async () => {
-        await supabase.auth.signOut();
+        localStorage.removeItem('invoice_ppc_token');
+        setUser(null);
     };
 
     const value = {

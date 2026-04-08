@@ -3,7 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Plus, Trash2, ArrowLeft, ChevronDown, ChevronUp, Check } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { supabase, Partner, Item, QuotationTerm, TERM_CATEGORIES, TermCategoryName } from '../lib/supabase';
+import { Partner, Item, QuotationTerm, TERM_CATEGORIES, TermCategoryName } from '../types';
+import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 
@@ -72,54 +73,41 @@ export const QuotationForm = () => {
     }, [id]);
 
     const fetchCustomers = async () => {
-        const { data } = await supabase.from('partners').select('*').eq('type', 'customer').order('company_name');
+        const data = await api.get<Partner[]>('/partners?type=customer');
         if (data) setCustomers(data);
     };
 
     const fetchItems = async () => {
-        const { data } = await supabase.from('items').select('*').order('name');
+        const data = await api.get<Item[]>('/items');
         if (data) setItems(data);
     };
 
     const fetchAvailableTerms = async () => {
-        const { data, error } = await supabase
-            .from('quotation_terms')
-            .select('*')
-            .eq('is_active', true)
-            .order('category')
-            .order('sort_order');
-
-        if (error) {
-            console.error('Error fetching terms:', error);
-            return;
-        }
-
-        if (data) {
-            setAvailableTerms(data);
-            // By default, select all active terms for new quotations
-            if (!id) {
-                setSelectedTermIds(data.map(t => t.id));
+        try {
+            const data = await api.get<QuotationTerm[]>('/terms');
+            if (data) {
+                // Filter active terms explicitly just in case
+                const activeTerms = data.filter(t => t.is_active);
+                setAvailableTerms(activeTerms);
+                if (!id) {
+                    setSelectedTermIds(activeTerms.map(t => t.id));
+                }
             }
+        } catch (error) {
+            console.error('Error fetching terms:', error);
         }
     };
 
     const loadQuotation = async (quotationId: string) => {
         setLoading(true);
         try {
-            // Load quotation header
-            const { data: quotation, error: quotationError } = await supabase
-                .from('quotations')
-                .select('*')
-                .eq('id', quotationId)
-                .single();
-
-            if (quotationError) throw quotationError;
+            const quotation = await api.get<any>(`/quotations/${quotationId}`);
 
             if (quotation) {
                 setFormData({
                     customer_id: quotation.customer_id,
-                    date: quotation.date,
-                    valid_until: quotation.validity_date || '',
+                    date: new Date(quotation.date).toISOString().split('T')[0],
+                    valid_until: quotation.validity_date ? new Date(quotation.validity_date).toISOString().split('T')[0] : '',
                     subject: quotation.subject || '',
                     contact: quotation.contact || '',
                     rfq_ref_no: quotation.rfq_ref_no || '',
@@ -127,19 +115,11 @@ export const QuotationForm = () => {
                     gst_rate: quotation.gst_rate,
                 });
 
-                // Load quotation items
-                const { data: quotationItems, error: itemsError } = await supabase
-                    .from('quotation_items')
-                    .select('*')
-                    .eq('quotation_id', quotationId);
-
-                if (itemsError) throw itemsError;
-
-                if (quotationItems && quotationItems.length > 0) {
-                    const loadedItems = quotationItems.map((item, index) => ({
+                if (quotation.items && quotation.items.length > 0) {
+                    const loadedItems = quotation.items.map((item: any, index: number) => ({
                         id: `loaded-${index}`,
-                        item_id: '',
-                        item_name: '',
+                        item_id: item.item_id || '',
+                        item_name: item.item_name || '',
                         item_description: item.item_description || '',
                         quantity: item.quantity,
                         unit_price: item.unit_price,
@@ -151,16 +131,8 @@ export const QuotationForm = () => {
                     setLineItems(loadedItems);
                 }
 
-                // Load selected terms
-                const { data: selectedTerms, error: termsError } = await supabase
-                    .from('quotation_selected_terms')
-                    .select('term_id')
-                    .eq('quotation_id', quotationId);
-
-                if (termsError) throw termsError;
-
-                if (selectedTerms) {
-                    setSelectedTermIds(selectedTerms.map(t => t.term_id));
+                if (quotation.selected_terms) {
+                    setSelectedTermIds(quotation.selected_terms.map((t: any) => t.term_id));
                 }
             }
         } catch (error: any) {
@@ -280,6 +252,19 @@ export const QuotationForm = () => {
         try {
             const totals = calculateTotals();
 
+            const itemsToSubmit = lineItems.map(item => ({
+                item_id: item.item_id || null,
+                item_description: item.item_description,
+                quantity: item.quantity,
+                uom: item.uom,
+                unit_price: item.unit_price,
+                disc_percent: item.disc_percent,
+                disc_amount: item.disc_amount,
+                total_price: item.total_price
+            }));
+
+            const termsToSubmit = selectedTermIds.map(termId => ({ term_id: termId }));
+
             const quotationData = {
                 customer_id: formData.customer_id,
                 date: formData.date,
@@ -291,65 +276,21 @@ export const QuotationForm = () => {
                 discount_amount: totals.headerDiscount,
                 gst_rate: formData.gst_rate,
                 total_amount: totals.total,
+                total: totals.total,
+                items: itemsToSubmit,
+                selected_terms: termsToSubmit
             };
 
-            let quotationId = id;
-
             if (isEditMode && id) {
-                // Update existing
-                const { error } = await supabase
-                    .from('quotations')
-                    .update(quotationData)
-                    .eq('id', id);
-                if (error) throw error;
-
-                // Delete existing items
-                await supabase.from('quotation_items').delete().eq('quotation_id', id);
-                // Delete existing selected terms
-                await supabase.from('quotation_selected_terms').delete().eq('quotation_id', id);
+                await api.put(`/quotations/${id}`, quotationData);
             } else {
-                // Create new
                 const quoteNum = 'CNK-Q-' + Date.now();
-                const { data, error: insertError } = await supabase
-                    .from('quotations')
-                    .insert([{
-                        ...quotationData,
-                        quotation_number: quoteNum,  // For backward compatibility with existing DB constraint
-                        quote_number: quoteNum,       // New standard field name
-                        status: 'draft'
-                    }])
-                    .select()
-                    .single();
-
-                if (insertError) throw insertError;
-                quotationId = data.id;
-            }
-
-            // Insert items
-            if (quotationId) {
-                const itemsToInsert = lineItems.map(item => ({
-                    quotation_id: quotationId,
-                    item_description: item.item_description,
-                    quantity: item.quantity,
-                    uom: item.uom,
-                    unit_price: item.unit_price,
-                    disc_percent: item.disc_percent,
-                    disc_amount: item.disc_amount,
-                    total_price: item.total_price
-                }));
-
-                const { error: itemsError } = await supabase.from('quotation_items').insert(itemsToInsert);
-                if (itemsError) throw itemsError;
-
-                // Insert selected terms
-                if (selectedTermIds.length > 0) {
-                    const termsToInsert = selectedTermIds.map(termId => ({
-                        quotation_id: quotationId,
-                        term_id: termId
-                    }));
-                    const { error: termsError } = await supabase.from('quotation_selected_terms').insert(termsToInsert);
-                    if (termsError) throw termsError;
-                }
+                await api.post('/quotations', {
+                    ...quotationData,
+                    quotation_number: quoteNum,
+                    quote_number: quoteNum,
+                    status: 'draft'
+                });
             }
 
             showToast(`Quotation ${isEditMode ? 'updated' : 'created'} successfully!`, 'success');

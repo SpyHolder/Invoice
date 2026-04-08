@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useReactToPrint } from 'react-to-print';
 import { ArrowLeft, Printer } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { supabase, PurchaseOrder, PurchaseOrderItem, Partner, Company } from '../lib/supabase';
+import { PurchaseOrder, PurchaseOrderItem, Partner, Company } from '../types';
+import { api } from '../lib/api';
 import { PurchaseOrderTemplate } from '../components/PurchaseOrderTemplate';
 
 export const ViewPurchaseOrder = () => {
@@ -32,50 +33,34 @@ export const ViewPurchaseOrder = () => {
         setLoading(true);
         try {
             // Fetch PO
-            const { data: poData, error: poError } = await supabase
-                .from('purchase_orders')
-                .select('*')
-                .eq('id', id)
-                .single();
-
-            if (poError) throw poError;
+            const poData = await api.get<any>(`/purchase-orders/${id}`);
+            if (!poData) throw new Error('Purchase Order not found');
             setPo(poData);
 
             // Fetch Vendor
             if (poData.vendor_id) {
-                const { data: vendorData, error: vendorError } = await supabase
-                    .from('partners')
-                    .select('*')
-                    .eq('id', poData.vendor_id)
-                    .single();
-
-                if (vendorError) {
-                    console.error('Error fetching vendor:', vendorError);
-                } else {
-                    setVendor(vendorData);
+                try {
+                    const vendorData = await api.get<any>(`/partners/${poData.vendor_id}`);
+                    if (vendorData) {
+                        setVendor(vendorData);
+                    }
+                } catch (e) {
+                    console.error('Error fetching vendor:', e);
                 }
             }
 
             // Fetch Items
-            const { data: itemsData, error: itemsError } = await supabase
-                .from('purchase_order_items')
-                .select('*')
-                .eq('po_id', id);
-
-            if (itemsError) throw itemsError;
-            setItems(itemsData || []);
+            setItems(poData.items || []);
 
             // Fetch Company Info
-            const { data: companyData, error: companyError } = await supabase
-                .from('companies')
-                .select('*')
-                .limit(1)
-                .single();
-
-            if (companyError && companyError.code !== 'PGRST116') {
-                console.error('Error fetching company:', companyError);
+            try {
+                const companies = await api.get<any[]>('/companies');
+                if (companies && companies.length > 0) {
+                    setCompany(companies[0]);
+                }
+            } catch (e) {
+                console.error('Error fetching company', e);
             }
-            if (companyData) setCompany(companyData);
 
         } catch (error) {
             console.error('Error fetching purchase order:', error);

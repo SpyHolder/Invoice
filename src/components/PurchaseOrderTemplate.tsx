@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import { PurchaseOrder, PurchaseOrderItem, Partner, Company } from '../lib/supabase';
+import { PurchaseOrder, PurchaseOrderItem, Partner, Company } from '../types';
 
 interface PurchaseOrderTemplateProps {
     po: PurchaseOrder;

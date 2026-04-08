@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Eye, Edit, CheckCircle, ShoppingCart } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { useToast } from '../contexts/ToastContext';
 import { processSOConfirmation, restoreStockForSO } from '../lib/stockService';
 import { Badge } from '../components/ui/Badge';
@@ -22,25 +22,18 @@ export const SalesOrders = () => {
     const fetchOrders = async () => {
         setLoading(true);
         try {
-            let query = supabase
-                .from('sales_orders')
-                .select(`
-                    *,
-                    quotations (
-                        quotation_number,
-                        customer:partners!customer_id(company_name)
-                    )
-                `)
-                .order('created_at', { ascending: false });
-
+            const data = await api.get<any[]>('/sales-orders');
+            
+            let filteredOrders = data || [];
             if (searchQuery) {
-                query = query.or(`so_number.ilike.%${searchQuery}%,customer_po_number.ilike.%${searchQuery}%`);
+                const lowerQuery = searchQuery.toLowerCase();
+                filteredOrders = filteredOrders.filter(so => 
+                    so.so_number?.toLowerCase().includes(lowerQuery) || 
+                    so.customer_po_number?.toLowerCase().includes(lowerQuery)
+                );
             }
-
-            const { data, error } = await query;
-
-            if (error) throw error;
-            setOrders(data || []);
+            
+            setOrders(filteredOrders);
         } catch (error) {
             console.error('Error fetching sales orders:', error);
             showToast('Failed to fetch sales orders', 'error');
@@ -59,12 +52,7 @@ export const SalesOrders = () => {
             const newStatus = so.status === 'confirmed' ? 'draft' : 'confirmed';
 
             // Update status in database
-            const { error } = await supabase
-                .from('sales_orders')
-                .update({ status: newStatus })
-                .eq('id', so.id);
-
-            if (error) throw error;
+            await api.put(`/sales-orders/${so.id}`, { ...so, status: newStatus });
 
             // Process stock based on new status
             if (newStatus === 'confirmed') {
@@ -167,9 +155,9 @@ export const SalesOrders = () => {
                                         <td className="py-3 px-4">
                                             <div className="flex items-center gap-2">
                                                 <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-[10px]">
-                                                    {(so.quotations?.customer?.company_name || '?').substring(0, 2).toUpperCase()}
+                                                    {(so.customer_name || '?').substring(0, 2).toUpperCase()}
                                                 </div>
-                                                <span className="font-medium text-gray-900">{so.quotations?.customer?.company_name || '-'}</span>
+                                                <span className="font-medium text-gray-900">{so.customer_name || '-'}</span>
                                             </div>
                                         </td>
                                         <td className="py-3 px-4 text-sm text-gray-600">

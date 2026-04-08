@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Save, X, FolderPlus, Check } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { supabase, QuotationTerm, TermCategory } from '../lib/supabase';
+import { QuotationTerm, TermCategory } from '../types';
+import { api } from '../lib/api';
 import { useToast } from '../contexts/ToastContext';
 
 export const TermsConditions = () => {
@@ -35,12 +36,7 @@ export const TermsConditions = () => {
 
     const fetchCategories = async () => {
         try {
-            const { data, error } = await supabase
-                .from('term_categories')
-                .select('*')
-                .order('sort_order');
-
-            if (error) throw error;
+            const data = await api.get<TermCategory[]>('/terms/categories');
             setCategories(data || []);
         } catch (error: any) {
             console.error('Error fetching categories:', error);
@@ -51,13 +47,7 @@ export const TermsConditions = () => {
     const fetchTerms = async () => {
         setLoading(true);
         try {
-            const { data, error } = await supabase
-                .from('quotation_terms')
-                .select('*')
-                .order('category')
-                .order('sort_order');
-
-            if (error) throw error;
+            const data = await api.get<QuotationTerm[]>('/terms');
             setTerms(data || []);
         } catch (error: any) {
             console.error('Error fetching terms:', error);
@@ -116,17 +106,10 @@ export const TermsConditions = () => {
             };
 
             if (editingId) {
-                const { error } = await supabase
-                    .from('quotation_terms')
-                    .update(termData)
-                    .eq('id', editingId);
-                if (error) throw error;
+                await api.put(`/terms/${editingId}`, termData);
                 showToast('Term updated successfully', 'success');
             } else {
-                const { error } = await supabase
-                    .from('quotation_terms')
-                    .insert([termData]);
-                if (error) throw error;
+                await api.post('/terms', termData);
                 showToast('Term created successfully', 'success');
             }
 
@@ -142,11 +125,7 @@ export const TermsConditions = () => {
         if (!confirm('Are you sure you want to delete this term?')) return;
 
         try {
-            const { error } = await supabase
-                .from('quotation_terms')
-                .delete()
-                .eq('id', id);
-            if (error) throw error;
+            await api.delete(`/terms/${id}`);
             showToast('Term deleted successfully', 'success');
             fetchTerms();
         } catch (error: any) {
@@ -157,11 +136,7 @@ export const TermsConditions = () => {
 
     const toggleActive = async (term: QuotationTerm) => {
         try {
-            const { error } = await supabase
-                .from('quotation_terms')
-                .update({ is_active: !term.is_active })
-                .eq('id', term.id);
-            if (error) throw error;
+            await api.put(`/terms/${term.id}`, { ...term, is_active: !term.is_active });
             showToast(`Term ${term.is_active ? 'disabled' : 'enabled'}`, 'success');
             fetchTerms();
         } catch (error: any) {
@@ -178,14 +153,10 @@ export const TermsConditions = () => {
         }
 
         try {
-            const { error } = await supabase
-                .from('term_categories')
-                .insert([{
-                    name: newCategoryName.trim(),
-                    sort_order: categories.length + 1
-                }]);
-
-            if (error) throw error;
+            await api.post('/terms/categories', {
+                name: newCategoryName.trim(),
+                sort_order: categories.length + 1
+            });
             showToast('Category created successfully', 'success');
             setNewCategoryName('');
             setShowAddCategoryForm(false);
@@ -208,21 +179,7 @@ export const TermsConditions = () => {
         }
 
         try {
-            const { error } = await supabase
-                .from('term_categories')
-                .update({ name: editingCategoryName.trim() })
-                .eq('id', id);
-
-            if (error) throw error;
-
-            // Also update all terms using this category
-            const { error: termsError } = await supabase
-                .from('quotation_terms')
-                .update({ category: editingCategoryName.trim() })
-                .eq('category_id', id);
-
-            if (termsError) console.error('Error updating terms:', termsError);
-
+            await api.put(`/terms/categories/${id}`, { name: editingCategoryName.trim(), sort_order: categories.find(c => c.id === id)?.sort_order || 0 });
             showToast('Category updated successfully', 'success');
             setEditingCategoryId(null);
             setEditingCategoryName('');
@@ -245,12 +202,7 @@ export const TermsConditions = () => {
         if (!confirm(`Are you sure you want to delete category "${name}"?`)) return;
 
         try {
-            const { error } = await supabase
-                .from('term_categories')
-                .delete()
-                .eq('id', id);
-
-            if (error) throw error;
+            await api.delete(`/terms/categories/${id}`);
             showToast('Category deleted successfully', 'success');
             fetchCategories();
         } catch (error: any) {

@@ -4,7 +4,8 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
-import { supabase, Partner } from '../lib/supabase';
+import { Partner } from '../types';
+import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 
@@ -42,16 +43,15 @@ export const Vendors = () => {
 
     const fetchVendors = async () => {
         if (!user) return;
-        const { data, error } = await supabase
-            .from('partners')
-            .select('*')
-            .eq('type', 'vendor')
-            .order('company_name');
-
-        if (!error && data) {
+        try {
+            const data = await api.get<Partner[]>('/partners?type=vendor');
             setVendors(data);
+        } catch (error) {
+            console.error('Error fetching vendors:', error);
+            showToast('Failed to fetch vendors', 'error');
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -69,12 +69,10 @@ export const Vendors = () => {
 
         try {
             if (editingVendor) {
-                const { error } = await supabase.from('partners').update(vendorData).eq('id', editingVendor.id);
-                if (error) throw error;
+                await api.put(`/partners/${editingVendor.id}`, vendorData);
                 showToast('Vendor updated successfully!', 'success');
             } else {
-                const { error } = await supabase.from('partners').insert([vendorData]);
-                if (error) throw error;
+                await api.post('/partners', vendorData);
                 showToast('Vendor added successfully!', 'success');
             }
             setIsModalOpen(false);
@@ -103,9 +101,8 @@ export const Vendors = () => {
     const handleDelete = async (id: string, name: string) => {
         if (confirm(`Delete vendor "${name}"?`)) {
             try {
-                const { error } = await supabase.from('partners').delete().eq('id', id);
-                if (error) throw error;
-                showToast('Vendor deleted', 'success');
+                await api.delete(`/partners/${id}`);
+                showToast('Vendor deleted successfully!', 'success');
                 await fetchVendors();
             } catch (error: any) {
                 showToast(error.message, 'error');

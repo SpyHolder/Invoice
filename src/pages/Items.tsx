@@ -4,7 +4,8 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
-import { supabase, Item } from '../lib/supabase';
+import { Item } from '../types';
+import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 
@@ -45,15 +46,15 @@ export const Items = () => {
     const fetchItems = async () => {
         if (!user) return;
 
-        const { data, error } = await supabase
-            .from('items')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-        if (!error && data) {
+        try {
+            const data = await api.get<Item[]>('/items');
             setItems(data);
+        } catch (error) {
+            console.error('Error fetching items:', error);
+            showToast('Failed to fetch items', 'error');
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -74,12 +75,10 @@ export const Items = () => {
 
         try {
             if (editingItem) {
-                const { error } = await supabase.from('items').update(itemData).eq('id', editingItem.id);
-                if (error) throw error;
+                await api.put(`/items/${editingItem.id}`, itemData);
                 showToast('Item updated successfully!', 'success');
             } else {
-                const { error } = await supabase.from('items').insert([itemData]);
-                if (error) throw error;
+                await api.post('/items', itemData);
                 showToast('Item added successfully!', 'success');
             }
 
@@ -111,8 +110,7 @@ export const Items = () => {
     const handleDelete = async (id: string, itemName: string) => {
         if (confirm(`Are you sure you want to delete "${itemName}"? This action cannot be undone.`)) {
             try {
-                const { error } = await supabase.from('items').delete().eq('id', id);
-                if (error) throw error;
+                await api.delete(`/items/${id}`);
                 showToast('Item deleted successfully!', 'success');
                 await fetchItems();
             } catch (error: any) {
@@ -193,7 +191,7 @@ export const Items = () => {
                                         <td className="font-medium">{item.name}</td>
                                         <td>{item.sku || '-'}</td>
                                         <td>{item.category || '-'}</td>
-                                        <td>${item.price.toFixed(2)}</td>
+                                        <td>${Number(item.price || 0).toFixed(2)}</td>
                                         <td>
                                             <span
                                                 className={`px-2 py-1 rounded text-sm ${item.stock <= item.min_stock

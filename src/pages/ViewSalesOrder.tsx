@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, Truck, FileText } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { supabase, SalesOrder, SalesOrderItem, Partner, Company } from '../lib/supabase';
+import { SalesOrder, SalesOrderItem, Partner, Company } from '../types';
+import { api } from '../lib/api';
 import { SalesOrderTemplate } from '../components/SalesOrderTemplate';
 import { useReactToPrint } from 'react-to-print';
 
@@ -31,64 +32,45 @@ export const ViewSalesOrder = () => {
         setLoading(true);
         try {
             // Fetch SO
-            const { data: soData, error: soError } = await supabase
-                .from('sales_orders')
-                .select('*')
-                .eq('id', id)
-                .single();
-            if (soError) throw soError;
+            const soData = await api.get<any>(`/sales-orders/${id}`);
+            if (!soData) throw new Error('Sales Order not found');
             setSo(soData);
 
             // Fetch Items
-            const { data: itemsData, error: itemsError } = await supabase
-                .from('sales_order_items')
-                .select('*')
-                .eq('so_id', id);
-            if (itemsError) throw itemsError;
-            setItems(itemsData || []);
+            setItems(soData.items || []);
 
             // Fetch Customer (via Quotation or direct? SO Schema links to Quote. Quote links to Customer)
-            // Wait, earlier I found SO has no customer_id.
             if (soData.quotation_id) {
-                const { data: quote, error: qError } = await supabase
-                    .from('quotations')
-                    .select('customer_id')
-                    .eq('id', soData.quotation_id)
-                    .single();
-
-                if (qError) throw qError;
-
-                if (quote) {
-                    const { data: cust, error: cError } = await supabase
-                        .from('partners')
-                        .select('*')
-                        .eq('id', quote.customer_id)
-                        .single();
-                    if (cError) throw cError;
-                    setCustomer(cust);
+                try {
+                    const quote = await api.get<any>(`/quotations/${soData.quotation_id}`);
+                    if (quote && quote.customer_id) {
+                        const cust = await api.get<any>(`/partners/${quote.customer_id}`);
+                        setCustomer(cust);
+                    }
+                } catch (e) {
+                    console.error('Error fetching customer via SO', e);
                 }
-            } else {
-                // If SO has no quote, we are in trouble unless we updated SO to have customer_id.
-                // For now, assume it has quote. 
-                // Or maybe I should have added customer_id to SO in schema update?
-                // The user provided the schema.
             }
 
             // Fetch Company Info
-            const { data: companyData } = await supabase
-                .from('companies')
-                .select('*')
-                .limit(1)
-                .single();
-            if (companyData) setCompany(companyData);
+            try {
+                const companies = await api.get<any[]>('/companies');
+                if (companies && companies.length > 0) {
+                    setCompany(companies[0]);
+                }
+            } catch (e) {
+                console.error('Error fetching company', e);
+            }
 
             // Fetch Delivery Progress
-            const { data: deliveryProgressData } = await supabase
-                .from('v_so_delivery_progress')
-                .select('*')
-                .eq('so_id', id)
-                .single();
-            if (deliveryProgressData) setDeliveryProgress(deliveryProgressData);
+            try {
+                const deliveryProgressData = await api.get<any>(`/sales-orders/${id}/delivery-progress`);
+                if (deliveryProgressData) {
+                    setDeliveryProgress(deliveryProgressData);
+                }
+            } catch (e) {
+                console.error('Error fetching delivery progress', e);
+            }
 
         } catch (error) {
             console.error('Error fetching SO:', error);

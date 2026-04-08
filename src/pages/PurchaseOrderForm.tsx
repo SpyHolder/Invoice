@@ -5,7 +5,8 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
-import { supabase, Item, Partner, QuotationTerm, TERM_CATEGORIES, TermCategoryName } from '../lib/supabase';
+import { Item, Partner, QuotationTerm, TERM_CATEGORIES, TermCategoryName } from '../types';
+import { api } from '../lib/api';
 import { useToast } from '../contexts/ToastContext';
 import { getBacklogItems } from '../lib/stockService';
 
@@ -88,34 +89,28 @@ export const PurchaseOrderForm = () => {
     }, [id]);
 
     const fetchVendors = async () => {
-        const { data } = await supabase.from('partners').select('*').eq('type', 'vendor').order('company_name');
+        const data = await api.get<Partner[]>('/partners?type=vendor');
         if (data) setVendors(data);
     };
 
     const fetchInventoryItems = async () => {
-        const { data } = await supabase.from('items').select('*').order('name');
+        const data = await api.get<Item[]>('/items');
         if (data) setInventoryItems(data);
     };
 
     const fetchAvailableTerms = async () => {
-        const { data, error } = await supabase
-            .from('quotation_terms')
-            .select('*')
-            .eq('is_active', true)
-            .order('category')
-            .order('sort_order');
-
-        if (error) {
-            console.error('Error fetching terms:', error);
-            return;
-        }
-
-        if (data) {
-            setAvailableTerms(data);
-            // By default, select all active terms for new POs
-            if (!id) {
-                setSelectedTermIds(data.map(t => t.id));
+        try {
+            const data = await api.get<QuotationTerm[]>('/terms');
+            if (data) {
+                const activeTerms = data.filter((t: any) => t.is_active);
+                setAvailableTerms(activeTerms);
+                // By default, select all active terms for new POs
+                if (!id) {
+                    setSelectedTermIds(activeTerms.map((t: any) => t.id));
+                }
             }
+        } catch (error) {
+            console.error('Error fetching terms:', error);
         }
     };
 
@@ -155,69 +150,60 @@ export const PurchaseOrderForm = () => {
     const loadPurchaseOrder = async (poId: string) => {
         setLoading(true);
         try {
-            const { data: po, error: poError } = await supabase.from('purchase_orders').select('*').eq('id', poId).single();
-            if (poError) throw poError;
+            const po = await api.get<any>(`/purchase-orders/${poId}`);
+            if (!po) throw new Error('PO not found');
 
-            if (po) {
-                setFormData({
-                    vendor_id: po.vendor_id || '',
-                    po_number: po.po_number,
-                    date: po.date || new Date().toISOString().split('T')[0],
-                    quote_ref: po.quote_ref || '',
-                    po_terms: po.notes?.includes('Terms:') ? po.notes.split('Terms:')[1]?.trim() : 'Refer to Payment Below',
-                    shipping_info: po.shipping_info || '',
-                    delivery_address: po.delivery_address || '',
-                    doc_address: po.notes?.includes('DocAddress:') ? po.notes.split('DocAddress:')[1]?.split('\n')[0]?.trim() : '',
-                    subject: po.notes?.includes('Subject:') ? po.notes.split('Subject:')[1]?.split('\n')[0]?.trim() : '',
-                    notes: po.notes || '',
-                    status: po.status,
-                    gst_rate: po.tax && po.subtotal ? Math.round((po.tax / po.subtotal) * 100) : 9,
+            setFormData({
+                vendor_id: po.vendor_id || '',
+                po_number: po.po_number,
+                date: po.date ? new Date(po.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                quote_ref: po.quote_ref || '',
+                po_terms: po.notes?.includes('Terms:') ? po.notes.split('Terms:')[1]?.trim() : 'Refer to Payment Below',
+                shipping_info: po.shipping_info || '',
+                delivery_address: po.delivery_address || '',
+                doc_address: po.notes?.includes('DocAddress:') ? po.notes.split('DocAddress:')[1]?.split('\n')[0]?.trim() : '',
+                subject: po.notes?.includes('Subject:') ? po.notes.split('Subject:')[1]?.split('\n')[0]?.trim() : '',
+                notes: po.notes || '',
+                status: po.status,
+                gst_rate: po.tax && po.subtotal ? Math.round((po.tax / po.subtotal) * 100) : 9,
+            });
+
+            const items = po.items;
+            if (items && items.length > 0) {
+                // Group items based on description patterns (format: "[GroupName] Item desc")
+                const groupMap: Record<string, POLineItem[]> = { 'Default': [] };
+
+                items.forEach((item: any, idx: number) => {
+                    const match = item.description?.match(/^\[([^\]]+)\]\s*/);
+                    let groupName = 'Default';
+                    let desc = item.description;
+
+                    if (match) {
+                        groupName = match[1];
+                        desc = item.description.replace(match[0], '');
+                    }
+
+                    if (!groupMap[groupName]) groupMap[groupName] = [];
+
+                    groupMap[groupName].push({
+                        id: item.id || `loaded-${idx}`,
+                        group_name: groupName,
+                        item_id: item.item_id || '',
+                        item_code: item.item_code || '',
+                        description: desc || '',
+                        quantity: item.quantity,
+                        unit_price: item.unit_price,
+                        total: item.total
+                    });
                 });
 
-                const { data: items, error: itemsError } = await supabase.from('purchase_order_items').select('*').eq('po_id', poId);
-                if (itemsError) throw itemsError;
+                const newGroups = Object.entries(groupMap).map(([name, groupItems]) => ({ name, items: groupItems }));
+                setGroups(newGroups.length > 0 ? newGroups : [{ name: 'Default', items: [] }]);
+            }
 
-                if (items && items.length > 0) {
-                    // Group items based on description patterns (format: "[GroupName] Item desc")
-                    const groupMap: Record<string, POLineItem[]> = { 'Default': [] };
-
-                    items.forEach((item, idx) => {
-                        const match = item.description?.match(/^\[([^\]]+)\]\s*/);
-                        let groupName = 'Default';
-                        let desc = item.description;
-
-                        if (match) {
-                            groupName = match[1];
-                            desc = item.description.replace(match[0], '');
-                        }
-
-                        if (!groupMap[groupName]) groupMap[groupName] = [];
-
-                        groupMap[groupName].push({
-                            id: item.id || `loaded-${idx}`,
-                            group_name: groupName,
-                            item_id: '',
-                            item_code: item.item_code || '',
-                            description: desc || '',
-                            quantity: item.quantity,
-                            unit_price: item.unit_price,
-                            total: item.total
-                        });
-                    });
-
-                    const newGroups = Object.entries(groupMap).map(([name, items]) => ({ name, items }));
-                    setGroups(newGroups.length > 0 ? newGroups : [{ name: 'Default', items: [] }]);
-                }
-
-                // Load selected terms for this PO
-                const { data: selectedTerms, error: termsError } = await supabase
-                    .from('po_selected_terms')
-                    .select('term_id')
-                    .eq('po_id', poId);
-
-                if (!termsError && selectedTerms) {
-                    setSelectedTermIds(selectedTerms.map(t => t.term_id));
-                }
+            // Load selected terms for this PO
+            if (po.selected_terms) {
+                setSelectedTermIds(po.selected_terms.map((t: any) => t.term_id));
             }
         } catch (error: any) {
             console.error(error);
@@ -360,11 +346,7 @@ export const PurchaseOrderForm = () => {
 
         for (const item of selected) {
             // Try to find matching item by description to get price
-            const { data: matchedItem } = await supabase
-                .from('items')
-                .select('price, name')
-                .ilike('name', `%${item.description}%`)
-                .maybeSingle();
+            const matchedItem = inventoryItems.find((inv: any) => inv.name?.toLowerCase().includes(item.description.toLowerCase()));
 
             const unitPrice = matchedItem?.price || 0;
             const quantity = item.qty_backordered;
@@ -448,67 +430,56 @@ export const PurchaseOrderForm = () => {
                 total,
             };
 
+            // Prepare all data
+            const allItems: any[] = [];
+            const backlogItemIds: string[] = []; // Track backlog items to clear
+
+            groups.forEach(g => {
+                g.items.forEach(item => {
+                    allItems.push({
+                        item_id: item.item_id || null,
+                        item_code: item.item_code,
+                        description: g.name !== 'Default' ? `[${g.name}] ${item.description}` : item.description,
+                        quantity: item.quantity,
+                        unit_price: item.unit_price,
+                        total: item.total
+                    });
+
+                    // Collect backlog item IDs for clearing
+                    if ((item as any)._backlogItemId) {
+                        backlogItemIds.push((item as any)._backlogItemId);
+                    }
+                });
+            });
+
+            const termsToInsert = selectedTermIds.map(termId => ({ term_id: termId }));
+
+            const poPayload = {
+                ...poData,
+                items: allItems.length > 0 ? allItems : [],
+                selected_terms: termsToInsert.length > 0 ? termsToInsert : []
+            };
+
             let poId = id;
 
             if (isEditMode && id) {
-                const { error } = await supabase.from('purchase_orders').update(poData).eq('id', id);
-                if (error) throw error;
-                await supabase.from('purchase_order_items').delete().eq('po_id', id);
-                // Delete existing selected terms
-                await supabase.from('po_selected_terms').delete().eq('po_id', id);
+                await api.put(`/purchase-orders/${id}`, poPayload);
             } else {
-                const { data, error } = await supabase.from('purchase_orders').insert([poData]).select().single();
-                if (error) throw error;
-                poId = data.id;
+                const res = await api.post<any>('/purchase-orders', poPayload);
+                poId = res.id;
             }
 
             if (poId) {
-                // Flatten all items with group prefix in description
-                const allItems: any[] = [];
-                const backlogItemIds: string[] = []; // Track backlog items to clear
-
-                groups.forEach(g => {
-                    g.items.forEach(item => {
-                        allItems.push({
-                            po_id: poId,
-                            item_code: item.item_code,
-                            description: g.name !== 'Default' ? `[${g.name}] ${item.description}` : item.description,
-                            quantity: item.quantity,
-                            unit_price: item.unit_price,
-                            total: item.total
-                        });
-
-                        // Collect backlog item IDs for clearing
-                        if ((item as any)._backlogItemId) {
-                            backlogItemIds.push((item as any)._backlogItemId);
-                        }
-                    });
-                });
-
-                if (allItems.length > 0) {
-                    const { error } = await supabase.from('purchase_order_items').insert(allItems);
-                    if (error) throw error;
-                }
-
                 // Clear backlog (set qty_backordered to 0) for items added to this PO
                 if (backlogItemIds.length > 0) {
                     for (const itemId of backlogItemIds) {
-                        await supabase
-                            .from('sales_order_items')
-                            .update({ qty_backordered: 0 })
-                            .eq('id', itemId);
+                        try {
+                            await api.put(`/sales-orders/items/${itemId}`, { qty_backordered: 0 });
+                        } catch (e) {
+                            console.error('Failed to clear backlog for item:', itemId, e);
+                        }
                     }
                     console.log('Cleared backlog for items:', backlogItemIds);
-                }
-
-                // Insert selected terms
-                if (selectedTermIds.length > 0) {
-                    const termsToInsert = selectedTermIds.map(termId => ({
-                        po_id: poId,
-                        term_id: termId
-                    }));
-                    const { error: termsError } = await supabase.from('po_selected_terms').insert(termsToInsert);
-                    if (termsError) throw termsError;
                 }
             }
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { DollarSign, FileText, AlertCircle, TrendingUp, Plus } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
 export const Dashboard = () => {
@@ -20,42 +20,15 @@ export const Dashboard = () => {
             if (!user) return;
 
             try {
-                // Fetch total revenue from paid invoices
-                const { data: paidInvoices } = await supabase
-                    .from('invoices')
-                    .select('grand_total')
-                    .eq('payment_status', 'paid');
+                // Fetch stats from our backend API
+                const data = await api.get<{
+                    totalRevenue: number,
+                    pendingInvoices: number,
+                    lowStockItems: number,
+                    totalCustomers: number
+                }>('/dashboard/stats');
 
-                const totalRevenue = paidInvoices?.reduce((sum, inv) => sum + (inv.grand_total || 0), 0) || 0;
-
-                // Fetch pending invoices count
-                const { count: pendingCount } = await supabase
-                    .from('invoices')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('payment_status', 'unpaid');
-
-                // Fetch low stock items count (items where stock <= min_stock)
-                // Note: PostgREST can't compare two columns directly, so we fetch and filter in JS
-                const { data: allItems } = await supabase
-                    .from('items')
-                    .select('stock, min_stock');
-
-                const lowStockCount = allItems?.filter(item =>
-                    item.stock <= item.min_stock
-                ).length || 0;
-
-                // Fetch total customers
-                const { count: customersCount } = await supabase
-                    .from('partners')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('type', 'customer');
-
-                setStats({
-                    totalRevenue,
-                    pendingInvoices: pendingCount || 0,
-                    lowStockItems: lowStockCount || 0,
-                    totalCustomers: customersCount || 0,
-                });
+                setStats(data);
             } catch (error) {
                 console.error('Error fetching dashboard data:', error);
             } finally {

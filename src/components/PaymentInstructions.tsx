@@ -1,4 +1,4 @@
-import { BankAccount } from '../lib/supabase';
+import { BankAccount } from '../types';
 
 interface PaymentInstructionsProps {
     bankAccounts: BankAccount[];

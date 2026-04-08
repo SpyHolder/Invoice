@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import { Quotation, QuotationItem, Partner, Company, QuotationTerm, TERM_CATEGORIES, TermCategoryName } from '../lib/supabase';
+import { Quotation, QuotationItem, Partner, Company, QuotationTerm, TERM_CATEGORIES, TermCategoryName } from '../types';
 
 interface QuotationTemplateProps {
     quotation: Quotation;

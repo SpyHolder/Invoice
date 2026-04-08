@@ -6,7 +6,7 @@ import {
 	Company,
 	BankAccount,
 	InvoiceDeliverySection,
-} from "../lib/supabase";
+} from "../types";
 
 interface InvoiceTemplateProps {
 	invoice: Invoice;

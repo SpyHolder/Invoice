@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, FileCheck, Printer } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { supabase, Quotation, QuotationItem, Partner, Company, QuotationTerm } from '../lib/supabase';
+import { Quotation, QuotationItem, Partner, Company, QuotationTerm } from '../types';
+import { api } from '../lib/api';
 import { QuotationTemplate } from '../components/QuotationTemplate';
 import { useReactToPrint } from 'react-to-print';
 
@@ -33,65 +34,48 @@ export const ViewQuotation = () => {
         setLoading(true);
         try {
             // Fetch quotation
-            const { data: quotationData, error: quotationError } = await supabase
-                .from('quotations')
-                .select('*')
-                .eq('id', id)
-                .single();
-
-            if (quotationError) throw quotationError;
+            const quotationData = await api.get<any>(`/quotations/${id}`);
+            if (!quotationData) throw new Error('Quotation not found');
             setQuotation(quotationData);
 
             // Fetch customer (partner)
-            const { data: customerData, error: customerError } = await supabase
-                .from('partners')
-                .select('*')
-                .eq('id', quotationData.customer_id)
-                .single();
-
-            if (customerError) throw customerError;
+            const customerData = await api.get<any>(`/partners/${quotationData.customer_id}`);
             setCustomer(customerData);
 
             // Fetch quotation items
-            const { data: itemsData, error: itemsError } = await supabase
-                .from('quotation_items')
-                .select('*')
-                .eq('quotation_id', id)
-                .order('id');
-
-            if (itemsError) throw itemsError;
-            setItems(itemsData || []);
+            setItems(quotationData.items || []);
 
             // Fetch Company Info
-            const { data: companyData } = await supabase
-                .from('companies')
-                .select('*')
-                .limit(1)
-                .single();
+            try {
+                const companies = await api.get<any[]>('/companies');
+                if (companies && companies.length > 0) {
+                    setCompany(companies[0]);
+                }
+            } catch (e) {
+                console.error('Error fetching company', e);
+            }
 
-            if (companyData) setCompany(companyData);
+            // Fetch selected terms
+            const selectedTermsData = quotationData.selected_terms || [];
+            
+            if (selectedTermsData.length > 0) {
+                // Fetch master terms to get details
+                const masterTerms = await api.get<any[]>('/terms');
+                
+                if (masterTerms) {
+                    const selectedTermIds = selectedTermsData.map((st: any) => st.term_id);
+                    const terms = masterTerms.filter(t => selectedTermIds.includes(t.id));
 
-            // Fetch selected terms with their details
-            const { data: selectedTermsData, error: termsError } = await supabase
-                .from('quotation_selected_terms')
-                .select('term_id, quotation_terms(*)')
-                .eq('quotation_id', id);
+                    // Sort by category and sort_order
+                    terms.sort((a, b) => {
+                        if (a.category !== b.category) {
+                            return a.category.localeCompare(b.category);
+                        }
+                        return a.sort_order - b.sort_order;
+                    });
 
-            if (!termsError && selectedTermsData) {
-                // Extract the terms from the joined data
-                const terms = selectedTermsData
-                    .map((st: any) => st.quotation_terms)
-                    .filter((t: QuotationTerm | null) => t !== null) as QuotationTerm[];
-
-                // Sort by category and sort_order
-                terms.sort((a, b) => {
-                    if (a.category !== b.category) {
-                        return a.category.localeCompare(b.category);
-                    }
-                    return a.sort_order - b.sort_order;
-                });
-
-                setSelectedTerms(terms);
+                    setSelectedTerms(terms);
+                }
             }
 
         } catch (error) {
@@ -107,40 +91,29 @@ export const ViewQuotation = () => {
 
         try {
             // Create invoice
-            const { data: newInvoice, error } = await supabase
-                .from('invoices')
-                .insert([
-                    {
-                        invoice_number: 'INV-' + Date.now(),
-                        so_id: null,
-                        date: new Date().toISOString().split('T')[0],
-                        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                        payment_status: 'unpaid',
-                        subtotal: quotation.subtotal,
-                        discount: quotation.total_amount ? (quotation.subtotal - quotation.total_amount) : 0,
-                        grand_total: quotation.total_amount,
-                        subject: quotation.subject,
-                    },
-                ])
-                .select()
-                .single();
+            const newInvoice = await api.post<any>('/invoices', {
+                invoice_number: 'INV-' + Date.now(),
+                so_id: null,
+                date: new Date().toISOString().split('T')[0],
+                due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                payment_status: 'unpaid',
+                billing_type: 'itemized',
+                invoice_type: 'standard',
+                subtotal: quotation.subtotal,
+                discount: quotation.total_amount ? (quotation.subtotal - quotation.total_amount) : 0,
+                grand_total: quotation.total_amount,
+                subject: quotation.subject,
+                items: items.map((item) => ({
+                    item_code: item.id.substring(0, 5),
+                    description: item.item_description,
+                    quantity: item.quantity,
+                    uom: item.uom,
+                    unit_price: item.unit_price,
+                    total_price: item.total_price,
+                }))
+            });
 
-            if (error || !newInvoice) throw error;
-
-            // Create invoice items
-            const invoiceItems = items.map((item) => ({
-                invoice_id: newInvoice.id,
-                item_code: item.id.substring(0, 5),
-                description: item.item_description,
-                quantity: item.quantity,
-                uom: item.uom,
-                unit_price: item.unit_price,
-                total_price: item.total_price,
-            }));
-
-            const { error: itemsError } = await supabase.from('invoice_items').insert(invoiceItems);
-
-            if (itemsError) throw itemsError;
+            if (!newInvoice) throw new Error('Failed to create invoice');
 
             alert('Quotation converted to invoice successfully!');
             navigate('/invoices');

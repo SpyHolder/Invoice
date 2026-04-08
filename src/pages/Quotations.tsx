@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Plus, FileCheck, Eye, ArrowRight, Edit2, Trash2 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { supabase, Quotation } from '../lib/supabase';
+import { Quotation } from '../types';
+import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../contexts/ToastContext';
@@ -27,57 +28,19 @@ export const Quotations = () => {
         setLoading(true);
 
         try {
-            let query = supabase
-                .from('quotations')
-                .select(`
-                    *,
-                    customer:partners!customer_id(company_name, type)
-                `)
-                .order('created_at', { ascending: false });
-
-            // Apply search filter if query exists
-            if (searchQuery) {
-                // Determine if query matches allowed UUID format for strict ID search (optional)
-                // For general search, we check number and subject.
-                // We also want to search by customer name, but that requires joining or strict filters.
-                // Supabase .or() with referenced tables is tricky.
-                // Let's stick to local filtering for joined columns if the dataset isn't huge, 
-                // OR use a flattened view. 
-                // For now, let's filter what we can on the main table: quotation_number, subject.
-                query = query.or(`quotation_number.ilike.%${searchQuery}%,subject.ilike.%${searchQuery}%`);
-            }
-
-            const { data, error } = await query;
-
-            if (error) throw error;
+            const data = await api.get<Quotation[]>('/quotations');
 
             if (data) {
-                // If we want to filter by customer name (which is on a joined table), we might need to do it client-side 
-                // if we can't easily do it server-side without a flattened view.
-                // However, the prompt asked for "feature search for whole table".
-                // If the user expects to search by customer name, client-side filtering after fetch is safest for small-medium datasets.
-                // Let's try to include it.
-                // But `fetchQuotations` logic above uses `searchQuery` to filter on server for main fields.
-                // If we want to allow searching by Customer Name, we might miss it if we ONLY filter server side on quotation columns.
-
-                // Hybrid approach: 
-                // 1. If searching, maybe fetch all (or recent X) and filter? 
-                // 2. Or just accept that Customer Name search might require a specific RPC or different query structure.
-
-                // Let's rely on the server filter for now for scalability. 
-                // *Self-correction*: The user likely wants to search by customer name too.
-                // Let's add client-side filtering for the result set for now to support customer name search 
-                // IF we don't apply strict server filtering that excludes it.
-
-                // REVISED STRATEGY: 
-                // fetch all (or paginated) -> client side filter for responsive search? 
-                // No, that's bad for large data.
-                // Let's attempt to use Supabase's inner join filter if possible.
-                // `!inner` implies inner join, so filtering on `partners.company_name` should work.
-
-                // Implementation:
-                // We'll stick to server-side filtering on quotation_number and subject for performance.
-                setQuotations(data as Quotation[]);
+                let filteredData = data;
+                if (searchQuery) {
+                    const lowerQuery = searchQuery.toLowerCase();
+                    filteredData = data.filter(q => 
+                        q.quotation_number?.toLowerCase().includes(lowerQuery) ||
+                        q.subject?.toLowerCase().includes(lowerQuery) ||
+                        (q as any).customer_name?.toLowerCase().includes(lowerQuery)
+                    );
+                }
+                setQuotations(filteredData);
             }
         } catch (error) {
             console.error('Error fetching quotations:', error);
@@ -89,58 +52,35 @@ export const Quotations = () => {
 
     const convertToSalesOrder = async (quotation: Quotation) => {
         try {
-            // Fetch quotation items
-            const { data: quotationItems } = await supabase
-                .from('quotation_items')
-                .select('*')
-                .eq('quotation_id', quotation.id);
-
-            if (!quotationItems || quotationItems.length === 0) {
+            // Fetch quotation details including items
+            const quotationDetails = await api.get<any>(`/quotations/${quotation.id}`);
+            
+            if (!quotationDetails.items || quotationDetails.items.length === 0) {
                 showToast('No items found in quotation', 'error');
                 return;
             }
 
-            // Create Sales Order with draft status (needs confirmation)
-            const { data: newSO, error: soError } = await supabase
-                .from('sales_orders')
-                .insert([{
-                    so_number: 'CNK-SO-' + Date.now(),
-                    quotation_id: quotation.id,
-                    status: 'draft'
-                }])
-                .select()
-                .single();
-
-            if (soError || !newSO) {
-                console.error('SO Error:', soError);
-                showToast('Failed to create Sales Order', 'error');
-                return;
-            }
-
-            // Create SO Items (copy from quotation items)
-            const soItems = quotationItems.map(item => ({
-                so_id: newSO.id,
+            // Create Sales Order Items
+            const soItems = quotationDetails.items.map((item: any) => ({
                 description: item.item_description,
                 quantity: item.quantity,
                 uom: item.uom,
-                phase_name: null // User will assign phases in SO edit form
+                phase_name: null 
             }));
 
-            const { error: itemsError } = await supabase
-                .from('sales_order_items')
-                .insert(soItems);
+            // Create Sales Order via API
+            const newSO = await api.post<any>('/sales-orders', {
+                so_number: 'CNK-SO-' + Date.now(),
+                quotation_id: quotation.id,
+                status: 'draft',
+                items: soItems
+            });
 
-            if (itemsError) {
-                console.error('Items Error:', itemsError);
-                showToast('Failed to create SO items', 'error');
-                return;
-            }
-
-            // Update quotation status to 'converted'
-            await supabase
-                .from('quotations')
-                .update({ status: 'converted' })
-                .eq('id', quotation.id);
+            // Update quotation status
+            await api.put(`/quotations/${quotation.id}`, {
+                ...quotation,
+                status: 'converted'
+            });
 
             showToast('Sales Order created successfully!', 'success');
             navigate(`/sales-orders/edit/${newSO.id}`);
@@ -152,13 +92,7 @@ export const Quotations = () => {
 
     const handleDelete = async (id: string) => {
         try {
-            // Delete quotation items first
-            await supabase.from('quotation_items').delete().eq('quotation_id', id);
-            // Delete quotation
-            const { error } = await supabase.from('quotations').delete().eq('id', id);
-
-            if (error) throw error;
-
+            await api.delete(`/quotations/${id}`);
             showToast('Quotation deleted successfully', 'success');
             fetchQuotations();
         } catch (error) {
@@ -225,7 +159,7 @@ export const Quotations = () => {
                                 {quotations.map((quotation) => (
                                     <tr key={quotation.id} className="hover:bg-gray-50/50 transition-colors">
                                         <td className="py-3 px-4">
-                                            <span className="font-medium text-gray-900">{(quotation as any).customer?.company_name || '-'}</span>
+                                            <span className="font-medium text-gray-900">{(quotation as any).customer_name || '-'}</span>
                                         </td>
                                         <td className="py-3 px-4 text-sm text-gray-600">{quotation.quotation_number || quotation.quote_number}</td>
                                         <td className="py-3 px-4 text-sm text-gray-600">{new Date(quotation.date).toLocaleDateString()}</td>

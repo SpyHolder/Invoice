@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import { SalesOrder, SalesOrderItem, Partner, Company } from '../lib/supabase';
+import { SalesOrder, SalesOrderItem, Partner, Company } from '../types';
 
 interface SalesOrderTemplateProps {
     so: SalesOrder;

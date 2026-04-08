@@ -4,7 +4,8 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
-import { supabase, Partner } from '../lib/supabase';
+import { Partner } from '../types';
+import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 
@@ -44,16 +45,15 @@ export const Customers = () => {
     const fetchCustomers = async () => {
         if (!user) return;
 
-        const { data, error } = await supabase
-            .from('partners')
-            .select('*')
-            .eq('type', 'customer')
-            .order('created_at', { ascending: false });
-
-        if (!error && data) {
+        try {
+            const data = await api.get<Partner[]>('/partners?type=customer');
             setCustomers(data);
+        } catch (error) {
+            console.error('Error fetching customers:', error);
+            showToast('Failed to fetch customers', 'error');
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -73,12 +73,10 @@ export const Customers = () => {
 
         try {
             if (editingCustomer) {
-                const { error } = await supabase.from('partners').update(customerData).eq('id', editingCustomer.id);
-                if (error) throw error;
+                await api.put(`/partners/${editingCustomer.id}`, customerData);
                 showToast('Customer updated successfully!', 'success');
             } else {
-                const { error } = await supabase.from('partners').insert([customerData]);
-                if (error) throw error;
+                await api.post('/partners', customerData);
                 showToast('Customer added successfully!', 'success');
             }
 
@@ -108,8 +106,7 @@ export const Customers = () => {
     const handleDelete = async (id: string, customerName: string) => {
         if (confirm(`Are you sure you want to delete "${customerName}"? This action cannot be undone.`)) {
             try {
-                const { error } = await supabase.from('partners').delete().eq('id', id);
-                if (error) throw error;
+                await api.delete(`/partners/${id}`);
                 showToast('Customer deleted successfully!', 'success');
                 await fetchCustomers();
             } catch (error: any) {
