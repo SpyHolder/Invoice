@@ -66,6 +66,7 @@ export interface Quotation {
     gst_rate: number; // "NO GST" note
     status: string;
     customer?: Partner; // Helper for joins
+    terms_content?: string; // HTML T&C content
     created_at?: string;
 }
 
@@ -195,6 +196,7 @@ export interface PurchaseOrder {
     total: number;
     vendor_name?: string; // Helper for display
     vendor?: Partner;
+    terms_content?: string; // HTML T&C content
     created_at?: string;
 }
 
@@ -209,46 +211,3 @@ export interface PurchaseOrderItem {
     total: number;
 }
 
-// Term Categories
-export interface TermCategory {
-    id: string;
-    name: string;
-    sort_order: number;
-    created_at?: string;
-    updated_at?: string;
-}
-
-// Quotation Terms & Conditions
-export interface QuotationTerm {
-    id: string;
-    category: string; // Legacy field - category name as string
-    category_id?: string | null; // New field - foreign key to term_categories
-    title: string | null;
-    content: string;
-    sort_order: number;
-    is_active: boolean;
-    created_at?: string;
-}
-
-export interface QuotationSelectedTerm {
-    id: string;
-    quotation_id: string;
-    term_id: string;
-    term?: QuotationTerm; // Helper for joins
-    created_at?: string;
-}
-
-// Legacy: Term Categories constant for backward compatibility
-// NOTE: Categories should now be fetched dynamically from the database
-// This constant is kept for fallback/migration purposes only
-export const LEGACY_TERM_CATEGORIES = [
-    'Remarks',
-    'Warranty',
-    'Cancellation',
-    'Payment Plan',
-    'General Terms'
-] as const;
-
-// Backward compatibility export - use TermCategory interface for new code
-export const TERM_CATEGORIES = LEGACY_TERM_CATEGORIES;
-export type TermCategoryName = typeof LEGACY_TERM_CATEGORIES[number];

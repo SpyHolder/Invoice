@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, ShoppingCart, CheckCircle, Eye, Edit2, Trash2 } from 'lucide-react';
+import { Plus, ShoppingCart, CheckCircle, Eye, Edit2, Trash2, Copy } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { PurchaseOrder } from '../types';
 import { api } from '../lib/api';
@@ -116,18 +116,18 @@ export const PurchaseOrders = () => {
                         <table className="w-full">
                             <thead>
                                 <tr className="border-b border-gray-200 bg-gray-50/50">
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">PO Number</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Vendor</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Date</th>
-                                    <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">Amount</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500 pl-8">Status</th>
-                                    <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">Actions</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">PO Number</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Vendor</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Date</th>
+                                    <th className="text-right py-2 px-3 text-sm font-medium text-gray-500">Amount</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500 pl-8">Status</th>
+                                    <th className="text-right py-2 px-3 text-sm font-medium text-gray-500">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {purchaseOrders.map((po) => (
                                     <tr key={po.id} className="hover:bg-gray-50/50 transition-colors">
-                                        <td className="py-3 px-4">
+                                        <td className="py-2 px-3">
                                             <div className="flex flex-col">
                                                 <span
                                                     className="font-medium text-blue-600 hover:text-blue-800 cursor-pointer"
@@ -138,7 +138,7 @@ export const PurchaseOrders = () => {
                                                 {po.quote_ref && <span className="text-xs text-gray-500">Ref: {po.quote_ref}</span>}
                                             </div>
                                         </td>
-                                        <td className="py-3 px-4">
+                                        <td className="py-2 px-3">
                                             <div className="flex items-center gap-2">
                                                 <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-[10px]">
                                                     {((po as any).vendor?.company_name || po.vendor_name || '?').substring(0, 2).toUpperCase()}
@@ -146,13 +146,13 @@ export const PurchaseOrders = () => {
                                                 <span className="font-medium text-gray-900">{(po as any).vendor?.company_name || po.vendor_name || '-'}</span>
                                             </div>
                                         </td>
-                                        <td className="py-3 px-4 text-sm text-gray-600">
+                                        <td className="py-2 px-3 text-sm text-gray-600">
                                             {po.date ? new Date(po.date).toLocaleDateString() : '-'}
                                         </td>
-                                        <td className="py-3 px-4 text-right font-medium text-gray-900">
+                                        <td className="py-2 px-3 text-right font-medium text-gray-900">
                                             ${po.total?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </td>
-                                        <td className="py-3 px-4 pl-8">
+                                        <td className="py-2 px-3 pl-8">
                                             <Badge variant={
                                                 po.status === 'received' ? 'success' :
                                                     po.status === 'pending' ? 'warning' : 'danger'
@@ -160,7 +160,7 @@ export const PurchaseOrders = () => {
                                                 {po.status.toUpperCase()}
                                             </Badge>
                                         </td>
-                                        <td className="py-3 px-4 text-right">
+                                        <td className="py-2 px-3 text-right">
                                             <div className="flex justify-end gap-2 relative z-10">
                                                 <button
                                                     type="button"
@@ -210,6 +210,17 @@ export const PurchaseOrders = () => {
                                                     title="Delete PO"
                                                 >
                                                     <Trash2 className="w-4 h-4 pointer-events-none" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        navigate(`/purchase-orders/new?duplicate=${po.id}`);
+                                                    }}
+                                                    className="p-1 text-gray-400 hover:text-indigo-600 transition-colors"
+                                                    title="Duplicate PO"
+                                                >
+                                                    <Copy className="w-4 h-4 pointer-events-none" />
                                                 </button>
                                             </div>
                                         </td>

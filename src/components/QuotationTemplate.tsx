@@ -1,12 +1,12 @@
-import { forwardRef } from 'react';
-import { Quotation, QuotationItem, Partner, Company, QuotationTerm, TERM_CATEGORIES, TermCategoryName } from '../types';
+﻿import { forwardRef } from 'react';
+import { Quotation, QuotationItem, Partner, Company } from '../types';
 
 interface QuotationTemplateProps {
     quotation: Quotation;
     customer: Partner;
     items: QuotationItem[];
     company?: Company;
-    selectedTerms?: QuotationTerm[];
+    termsContent?: string;
 }
 
 // Static Bank Details (CNK Bank Details)
@@ -20,7 +20,7 @@ const BANK_DETAILS = {
 };
 
 export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplateProps>(
-    ({ quotation, customer, items, company, selectedTerms = [] }, ref) => {
+    ({ quotation, customer, items, company, termsContent = '' }, ref) => {
         const formatDate = (dateString: string) => {
             return new Date(dateString).toLocaleDateString('en-GB', {
                 day: 'numeric',
@@ -28,12 +28,6 @@ export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplatePro
                 year: 'numeric',
             });
         };
-
-        // Group selected terms by category
-        const termsByCategory = TERM_CATEGORIES.reduce((acc, category) => {
-            acc[category] = selectedTerms.filter(t => t.category === category);
-            return acc;
-        }, {} as Record<TermCategoryName, QuotationTerm[]>);
 
         return (
             <div ref={ref} className="p-8 bg-white text-black font-sans h-full mx-auto" style={{ width: '210mm', minHeight: '297mm' }}>
@@ -196,89 +190,14 @@ export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplatePro
                 {/* Page Break - Terms & Conditions always on new page */}
                 <div className="break-before-page" style={{ pageBreakBefore: 'always', breakBefore: 'page' }}></div>
 
-                {/* Terms & Conditions by Category - Page 2 */}
-                {selectedTerms.length > 0 && (
+                {/* Terms & Conditions - Rendered as HTML */}
+                {termsContent && (
                     <div className="text-xs mt-8">
-                        {/* Remarks */}
-                        {termsByCategory['Remarks']?.length > 0 && (
-                            <div className="mb-4">
-                                <p className="font-bold underline mb-1">Remarks:</p>
-                                <ul className="list-none space-y-1">
-                                    {termsByCategory['Remarks'].map((term) => (
-                                        <li key={term.id} className="flex">
-                                            <span className="mr-2">*</span>
-                                            <span>{term.title ? `${term.title}: ` : ''}{term.content}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-
-                        {/* Warranty */}
-                        {termsByCategory['Warranty']?.length > 0 && (
-                            <div className="mb-4">
-                                <p className="font-bold underline mb-1">WARRANTY:</p>
-                                <ul className="list-none space-y-1">
-                                    {termsByCategory['Warranty'].map((term) => (
-                                        <li key={term.id} className="flex">
-                                            <span className="mr-2">*</span>
-                                            <div>
-                                                {term.title && <span className="font-semibold">{term.title}</span>}
-                                                <span className="whitespace-pre-wrap">{term.title ? '\n' : ''}{term.content}</span>
-                                            </div>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-
-                        {/* Cancellation */}
-                        {termsByCategory['Cancellation']?.length > 0 && (
-                            <div className="mb-4">
-                                <p className="font-bold underline mb-1">CANCELLATION:</p>
-                                <ul className="list-none space-y-1">
-                                    {termsByCategory['Cancellation'].map((term) => (
-                                        <li key={term.id} className="flex">
-                                            <span className="mr-2">*</span>
-                                            <span>{term.content}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
-
-                        {/* Payment Plan */}
-                        {termsByCategory['Payment Plan']?.length > 0 && (
-                            <div className="mb-4">
-                                {termsByCategory['Payment Plan'].map((term) => (
-                                    <div key={term.id}>
-                                        {term.title && <p className="font-bold underline italic mb-1">{term.title}</p>}
-                                        <ul className="list-none space-y-0.5 ml-4">
-                                            {term.content.split('\n').map((line, i) => (
-                                                <li key={i} className="flex">
-                                                    <span className="mr-2">-</span>
-                                                    <span className="underline italic">{line}</span>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        {/* General Terms */}
-                        {termsByCategory['General Terms']?.length > 0 && (
-                            <div className="mb-4">
-                                <ul className="list-none space-y-1">
-                                    {termsByCategory['General Terms'].map((term) => (
-                                        <li key={term.id} className="flex">
-                                            <span className="mr-2">*</span>
-                                            <span>{term.content}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        )}
+                        <p className="font-bold underline mb-2">Terms & Conditions:</p>
+                        <div
+                            className="prose prose-sm max-w-none"
+                            dangerouslySetInnerHTML={{ __html: termsContent }}
+                        />
                     </div>
                 )}
 

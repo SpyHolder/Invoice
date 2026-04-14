@@ -1,4 +1,4 @@
-import { forwardRef } from 'react';
+﻿import { forwardRef } from 'react';
 import { PurchaseOrder, PurchaseOrderItem, Partner, Company } from '../types';
 
 interface PurchaseOrderTemplateProps {
@@ -6,6 +6,7 @@ interface PurchaseOrderTemplateProps {
     vendor: Partner;
     items: PurchaseOrderItem[];
     company?: Company;
+    termsContent?: string;
 }
 
 interface GroupedItem {
@@ -15,7 +16,7 @@ interface GroupedItem {
 }
 
 export const PurchaseOrderTemplate = forwardRef<HTMLDivElement, PurchaseOrderTemplateProps>(
-    ({ po, vendor, items, company }, ref) => {
+    ({ po, vendor, items, company, termsContent = '' }, ref) => {
         const formatDate = (dateString: string | null) => {
             if (!dateString) return '-';
             return new Date(dateString).toLocaleDateString('en-GB', {
@@ -142,7 +143,7 @@ export const PurchaseOrderTemplate = forwardRef<HTMLDivElement, PurchaseOrderTem
                     <div>
                         <div className="bg-cyan-500 text-white font-bold px-2 py-1 text-center text-xs">SHIPPING INFO</div>
                         <div className="border border-gray-400 p-2 text-xs min-h-24 whitespace-pre-line">
-                            {po.shipping_info || 'Ship Via: FCA – To Working Site.\nIncoterm: DAP'}
+                            {po.shipping_info || 'Ship Via: FCA â€“ To Working Site.\nIncoterm: DAP'}
                         </div>
                     </div>
                 </div>
@@ -256,15 +257,25 @@ export const PurchaseOrderTemplate = forwardRef<HTMLDivElement, PurchaseOrderTem
                     </div>
                 </div>
 
-                {/* Terms and Conditions */}
-                <div className="mt-6 text-xs text-gray-600 border-t pt-2">
-                    <p className="font-bold mb-1">Terms & Conditions:</p>
-                    <ol className="list-decimal pl-4 space-y-1">
-                        <li>Please acknowledge receipt of this PO.</li>
-                        <li>Delivery must be made to the specified address.</li>
-                        <li>Invoices must quote the PO Number.</li>
-                    </ol>
-                </div>
+                {/* Terms and Conditions - Rendered as HTML */}
+                {termsContent ? (
+                    <div className="mt-6 text-xs border-t pt-2">
+                        <p className="font-bold mb-1">Terms & Conditions:</p>
+                        <div
+                            className="prose prose-sm max-w-none"
+                            dangerouslySetInnerHTML={{ __html: termsContent }}
+                        />
+                    </div>
+                ) : (
+                    <div className="mt-6 text-xs text-gray-600 border-t pt-2">
+                        <p className="font-bold mb-1">Terms & Conditions:</p>
+                        <ol className="list-decimal pl-4 space-y-1">
+                            <li>Please acknowledge receipt of this PO.</li>
+                            <li>Delivery must be made to the specified address.</li>
+                            <li>Invoices must quote the PO Number.</li>
+                        </ol>
+                    </div>
+                )}
             </div>
         );
     }

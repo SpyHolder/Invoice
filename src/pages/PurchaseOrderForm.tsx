@@ -1,14 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Plus, Trash2, ArrowLeft, FolderPlus, ShoppingCart, AlertTriangle, ChevronDown, ChevronUp, Check, FileText, Truck, MapPin } from 'lucide-react';
+import { Plus, Trash2, ArrowLeft, FolderPlus, ShoppingCart, AlertTriangle, ChevronDown, Check, FileText, Truck, MapPin } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Badge } from '../components/ui/Badge';
-import { Item, Partner, QuotationTerm, TERM_CATEGORIES, TermCategoryName } from '../types';
+import { Item, Partner } from '../types';
 import { api } from '../lib/api';
 import { useToast } from '../contexts/ToastContext';
+import { SearchableSelect } from '../components/ui/SearchableSelect';
 import { getBacklogItems } from '../lib/stockService';
+import { Editor } from '@tinymce/tinymce-react';
+import '../lib/tinymce';
 
 interface BacklogItem {
     id: string;
@@ -73,19 +76,54 @@ export const PurchaseOrderForm = () => {
     const [backlogItems, setBacklogItems] = useState<BacklogItem[]>([]);
     const [loadingBacklog, setLoadingBacklog] = useState(false);
 
-    // Terms & Conditions state
-    const [availableTerms, setAvailableTerms] = useState<QuotationTerm[]>([]);
-    const [selectedTermIds, setSelectedTermIds] = useState<string[]>([]);
-    const [expandedCategories, setExpandedCategories] = useState<TermCategoryName[]>([...TERM_CATEGORIES]);
+    // Terms content
+    const [termsContent, setTermsContent] = useState('');
+
+    // Checkbox multi-select state
+    const [selectedPOItems, setSelectedPOItems] = useState<Set<string>>(new Set());
+
+    const toggleSelectPOItem = (id: string) => {
+        setSelectedPOItems(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAllInPOGroup = (groupName: string) => {
+        const group = groups.find(g => g.name === groupName);
+        if (!group) return;
+        const allSelected = group.items.every(i => selectedPOItems.has(i.id));
+        setSelectedPOItems(prev => {
+            const next = new Set(prev);
+            group.items.forEach(i => { if (allSelected) next.delete(i.id); else next.add(i.id); });
+            return next;
+        });
+    };
+
+    const deleteSelectedPOItems = () => {
+        if (selectedPOItems.size === 0) return;
+        setGroups(prev => prev.map(g => ({ ...g, items: g.items.filter(i => !selectedPOItems.has(i.id)) })));
+        showToast(`Deleted ${selectedPOItems.size} item(s)`, 'success');
+        setSelectedPOItems(new Set());
+    };
 
     useEffect(() => {
-        fetchVendors();
-        fetchInventoryItems();
-        fetchAvailableTerms();
-        if (id) {
-            setIsEditMode(true);
-            loadPurchaseOrder(id);
-        }
+        const init = async () => {
+            fetchVendors();
+            const masterItems = await fetchInventoryItems();
+            const searchParams = new URLSearchParams(window.location.search);
+            const duplicateId = searchParams.get('duplicate');
+            if (id) {
+                setIsEditMode(true);
+                await loadPurchaseOrder(id, false, masterItems);
+            } else if (duplicateId) {
+                await loadPurchaseOrder(duplicateId, true, masterItems);
+            } else {
+                loadDefaultTerms();
+            }
+        };
+        init();
     }, [id]);
 
     const fetchVendors = async () => {
@@ -95,59 +133,25 @@ export const PurchaseOrderForm = () => {
 
     const fetchInventoryItems = async () => {
         const data = await api.get<Item[]>('/items');
-        if (data) setInventoryItems(data);
+        if (data) {
+            setInventoryItems(data);
+            return data;
+        }
+        return [];
     };
 
-    const fetchAvailableTerms = async () => {
+    const loadDefaultTerms = async () => {
         try {
-            const data = await api.get<QuotationTerm[]>('/terms');
+            const data = await api.get<any>('/terms/default');
             if (data) {
-                const activeTerms = data.filter((t: any) => t.is_active);
-                setAvailableTerms(activeTerms);
-                // By default, select all active terms for new POs
-                if (!id) {
-                    setSelectedTermIds(activeTerms.map((t: any) => t.id));
-                }
+                setTermsContent(data.content || '');
             }
         } catch (error) {
-            console.error('Error fetching terms:', error);
+            console.error('Error loading default terms:', error);
         }
     };
 
-    // Terms selection handlers
-    const toggleTerm = (termId: string) => {
-        setSelectedTermIds(prev =>
-            prev.includes(termId)
-                ? prev.filter(id => id !== termId)
-                : [...prev, termId]
-        );
-    };
-
-    const toggleCategory = (category: TermCategoryName) => {
-        setExpandedCategories(prev =>
-            prev.includes(category)
-                ? prev.filter(c => c !== category)
-                : [...prev, category]
-        );
-    };
-
-    const selectAllInCategory = (category: TermCategoryName) => {
-        const categoryTermIds = availableTerms.filter(t => t.category === category).map(t => t.id);
-        setSelectedTermIds(prev => [...new Set([...prev, ...categoryTermIds])]);
-    };
-
-    const deselectAllInCategory = (category: TermCategoryName) => {
-        const categoryTermIds = availableTerms.filter(t => t.category === category).map(t => t.id);
-        setSelectedTermIds(prev => prev.filter(id => !categoryTermIds.includes(id)));
-    };
-
-    // Group terms by category for display
-    const termsByCategory = TERM_CATEGORIES.reduce((acc, category) => {
-        acc[category] = availableTerms.filter(t => t.category === category);
-        return acc;
-    }, {} as Record<TermCategoryName, QuotationTerm[]>);
-
-    const loadPurchaseOrder = async (poId: string) => {
+    const loadPurchaseOrder = async (poId: string, isDuplicate = false, masterItems: Item[] = []) => {
         setLoading(true);
         try {
             const po = await api.get<any>(`/purchase-orders/${poId}`);
@@ -155,8 +159,8 @@ export const PurchaseOrderForm = () => {
 
             setFormData({
                 vendor_id: po.vendor_id || '',
-                po_number: po.po_number,
-                date: po.date ? new Date(po.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                po_number: isDuplicate ? '' : po.po_number,
+                date: isDuplicate ? new Date().toISOString().split('T')[0] : (po.date ? new Date(po.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
                 quote_ref: po.quote_ref || '',
                 po_terms: po.notes?.includes('Terms:') ? po.notes.split('Terms:')[1]?.trim() : 'Refer to Payment Below',
                 shipping_info: po.shipping_info || '',
@@ -164,7 +168,7 @@ export const PurchaseOrderForm = () => {
                 doc_address: po.notes?.includes('DocAddress:') ? po.notes.split('DocAddress:')[1]?.split('\n')[0]?.trim() : '',
                 subject: po.notes?.includes('Subject:') ? po.notes.split('Subject:')[1]?.split('\n')[0]?.trim() : '',
                 notes: po.notes || '',
-                status: po.status,
+                status: isDuplicate ? 'pending' : po.status,
                 gst_rate: po.tax && po.subtotal ? Math.round((po.tax / po.subtotal) * 100) : 9,
             });
 
@@ -185,10 +189,20 @@ export const PurchaseOrderForm = () => {
 
                     if (!groupMap[groupName]) groupMap[groupName] = [];
 
+                    let matchedItemId = item.item_id || '';
+                    if (!matchedItemId || !masterItems.find(i => i.id == matchedItemId)) {
+                        const match = masterItems.find(i =>
+                            i.name && desc && String(i.name).toLowerCase() === String(desc).toLowerCase()
+                        );
+                        if (match) {
+                            matchedItemId = match.id;
+                        }
+                    }
+
                     groupMap[groupName].push({
                         id: item.id || `loaded-${idx}`,
                         group_name: groupName,
-                        item_id: item.item_id || '',
+                        item_id: matchedItemId,
                         item_code: item.item_code || '',
                         description: desc || '',
                         quantity: item.quantity,
@@ -201,10 +215,8 @@ export const PurchaseOrderForm = () => {
                 setGroups(newGroups.length > 0 ? newGroups : [{ name: 'Default', items: [] }]);
             }
 
-            // Load selected terms for this PO
-            if (po.selected_terms) {
-                setSelectedTermIds(po.selected_terms.map((t: any) => t.term_id));
-            }
+            // Load terms_content
+            setTermsContent(po.terms_content || '');
         } catch (error: any) {
             console.error(error);
             showToast('Failed to load PO', 'error');
@@ -452,12 +464,11 @@ export const PurchaseOrderForm = () => {
                 });
             });
 
-            const termsToInsert = selectedTermIds.map(termId => ({ term_id: termId }));
 
             const poPayload = {
                 ...poData,
                 items: allItems.length > 0 ? allItems : [],
-                selected_terms: termsToInsert.length > 0 ? termsToInsert : []
+                terms_content: termsContent
             };
 
             let poId = id;
@@ -534,22 +545,13 @@ export const PurchaseOrderForm = () => {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Vendor *</label>
-                                    <div className="relative">
-                                        <select
-                                            value={formData.vendor_id}
-                                            onChange={(e) => setFormData({ ...formData, vendor_id: e.target.value })}
-                                            className="w-full px-4 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none transition-all"
-                                            required
-                                        >
-                                            <option value="">Select Vendor...</option>
-                                            {vendors.map(v => (
-                                                <option key={v.id} value={v.id}>{v.company_name}</option>
-                                            ))}
-                                        </select>
-                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
-                                            <ChevronDown className="w-4 h-4" />
-                                        </div>
-                                    </div>
+                                    <SearchableSelect
+                                        value={formData.vendor_id}
+                                        onChange={(val) => setFormData({ ...formData, vendor_id: val })}
+                                        options={vendors.map(v => ({ label: v.company_name, value: v.id }))}
+                                        placeholder="Select Vendor..."
+                                        className="w-full"
+                                    />
                                 </div>
 
                                 <Input
@@ -668,6 +670,19 @@ export const PurchaseOrderForm = () => {
                                     <h2 className="text-lg font-semibold text-gray-800">Items by Group</h2>
                                 </div>
                                 <div className="flex items-center gap-3">
+                                    {selectedPOItems.size > 0 && (
+                                        <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg">
+                                            <span className="text-xs font-medium text-red-700">{selectedPOItems.size} selected</span>
+                                            <button
+                                                type="button"
+                                                onClick={deleteSelectedPOItems}
+                                                className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-red-600 bg-red-100 rounded hover:bg-red-200 transition-colors"
+                                            >
+                                                <Trash2 className="w-3 h-3" />
+                                                Delete
+                                            </button>
+                                        </div>
+                                    )}
                                     {/* Sales Backlog Button */}
                                     <Button
                                         type="button"
@@ -787,87 +802,95 @@ export const PurchaseOrderForm = () => {
                                             </div>
                                         </div>
 
-                                        <div className="p-1 overflow-x-auto">
+                                        <div className="p-1 overflow-visible">
                                             {group.items.length > 0 ? (
                                                 <table className="w-full text-sm">
                                                     <thead>
-                                                        <tr className="text-gray-500 border-b border-gray-100">
-                                                            <th className="p-3 text-left font-medium w-48">Select Item</th>
-                                                            <th className="p-3 text-left font-medium w-32">Code</th>
-                                                            <th className="p-3 text-left font-medium">Description</th>
-                                                            <th className="p-3 text-center font-medium w-24">Qty</th>
-                                                            <th className="p-3 text-right font-medium w-32">Unit Price</th>
-                                                            <th className="p-3 text-right font-medium w-32">Total</th>
-                                                            <th className="w-12"></th>
+                                                        <tr className="text-gray-500 border-b border-gray-100 text-xs uppercase">
+                                                            <th className="py-2 px-2 w-10">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={group.items.length > 0 && group.items.every(i => selectedPOItems.has(i.id))}
+                                                                    onChange={() => toggleSelectAllInPOGroup(group.name)}
+                                                                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                                                />
+                                                            </th>
+                                                            <th className="py-2 px-2 text-left font-medium w-40">Select Item</th>
+                                                            <th className="py-2 px-2 text-left font-medium w-28">Code</th>
+                                                            <th className="py-2 px-2 text-left font-medium">Description</th>
+                                                            <th className="py-2 px-2 text-center font-medium w-20">Qty</th>
+                                                            <th className="py-2 px-2 text-right font-medium w-28">Unit Price</th>
+                                                            <th className="py-2 px-2 text-right font-medium w-28">Total</th>
+                                                            <th className="w-10"></th>
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-gray-50">
                                                         {group.items.map((item, _iIdx) => (
-                                                            <tr key={item.id} className="group hover:bg-gray-50/50 transition-colors">
-                                                                <td className="p-2">
-                                                                    <div className="relative">
-                                                                        <select
-                                                                            value={item.item_id}
-                                                                            onChange={(e) => updateItem(group.name, item.id, 'item_id', e.target.value)}
-                                                                            className="w-full pl-3 pr-8 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none transition-all text-sm"
-                                                                        >
-                                                                            <option value="">Manual Entry</option>
-                                                                            {inventoryItems.map(i => (
-                                                                                <option key={i.id} value={i.id}>{i.name}</option>
-                                                                            ))}
-                                                                        </select>
-                                                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
-                                                                            <ChevronDown className="w-4 h-4" />
-                                                                        </div>
-                                                                    </div>
+                                                            <tr key={item.id} className={`group hover:bg-gray-50/50 transition-colors ${selectedPOItems.has(item.id) ? 'bg-blue-50/40' : ''}`}>
+                                                                <td className="py-1.5 px-2">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={selectedPOItems.has(item.id)}
+                                                                        onChange={() => toggleSelectPOItem(item.id)}
+                                                                        className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                                                    />
                                                                 </td>
-                                                                <td className="p-2">
+                                                                <td className="py-1.5 px-2">
+                                                                    <SearchableSelect
+                                                                        value={item.item_id || ''}
+                                                                        onChange={(val) => updateItem(group.name, item.id, 'item_id', val)}
+                                                                        options={[{ label: 'Manual Entry', value: '' }, ...inventoryItems.map(i => ({ label: i.name, value: i.id }))]}
+                                                                        placeholder="Manual Entry"
+                                                                        className="w-full text-xs"
+                                                                    />
+                                                                </td>
+                                                                <td className="py-1.5 px-2">
                                                                     <input
                                                                         type="text"
                                                                         value={item.item_code}
                                                                         onChange={e => updateItem(group.name, item.id, 'item_code', e.target.value)}
-                                                                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm"
+                                                                        className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                                         placeholder="Code"
                                                                     />
                                                                 </td>
-                                                                <td className="p-2">
+                                                                <td className="py-1.5 px-2">
                                                                     <input
                                                                         type="text"
                                                                         value={item.description}
                                                                         onChange={e => updateItem(group.name, item.id, 'description', e.target.value)}
-                                                                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium text-gray-700 text-sm"
+                                                                        className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                                         placeholder="Description"
                                                                     />
                                                                 </td>
-                                                                <td className="p-2">
+                                                                <td className="py-1.5 px-2">
                                                                     <input
                                                                         type="number"
                                                                         value={item.quantity}
                                                                         onChange={e => updateItem(group.name, item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                                                                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-center text-sm"
+                                                                        className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                                         min="0"
                                                                     />
                                                                 </td>
-                                                                <td className="p-2">
+                                                                <td className="py-1.5 px-2">
                                                                     <input
                                                                         type="number"
                                                                         value={item.unit_price}
                                                                         onChange={e => updateItem(group.name, item.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                                                                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-right text-sm"
+                                                                        className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-xs text-right focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                                         min="0"
                                                                         step="0.01"
                                                                     />
                                                                 </td>
-                                                                <td className="p-2 text-right font-semibold text-gray-900 px-4 text-sm">
+                                                                <td className="py-1.5 px-2 text-right font-semibold text-gray-900 text-xs">
                                                                     {item.total.toFixed(2)}
                                                                 </td>
-                                                                <td className="p-2 text-center">
+                                                                <td className="py-1.5 px-2 text-center">
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => removeItem(group.name, item.id)}
-                                                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                                                        className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
                                                                     >
-                                                                        <Trash2 className="w-4 h-4" />
+                                                                        <Trash2 className="w-3.5 h-3.5" />
                                                                     </button>
                                                                 </td>
                                                             </tr>
@@ -930,101 +953,32 @@ export const PurchaseOrderForm = () => {
                             </div>
                         </Card>
 
-                        {/* Terms & Conditions Selection */}
+                        {/* Terms & Conditions Editor */}
                         <Card className="border-l-4 border-l-purple-500">
-                            <div className="flex items-center justify-between mb-4 border-b border-gray-100 pb-2">
-                                <div className="flex items-center gap-2">
-                                    <FileText className="w-5 h-5 text-purple-600" />
-                                    <h2 className="text-lg font-semibold text-gray-800">Terms & Conditions</h2>
-                                </div>
-                                <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full font-medium">
-                                    {selectedTermIds.length} Selected
-                                </span>
+                            <div className="flex items-center gap-2 mb-4 border-b border-gray-100 pb-2">
+                                <FileText className="w-5 h-5 text-purple-600" />
+                                <h2 className="text-lg font-semibold text-gray-800">Terms & Conditions</h2>
                             </div>
-
-                            {availableTerms.length === 0 ? (
-                                <div className="text-center py-6 text-gray-500 bg-gray-50 rounded-lg border border-dashed border-gray-200">
-                                    <p className="text-sm">No terms available.</p>
-                                    <a href="/terms" className="text-blue-600 hover:underline text-sm font-medium mt-1 inline-block">Manage Terms</a>
-                                </div>
-                            ) : (
-                                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1 custom-scrollbar">
-                                    {TERM_CATEGORIES.map(category => {
-                                        const categoryTerms = termsByCategory[category] || [];
-                                        if (categoryTerms.length === 0) return null;
-
-                                        const isExpanded = expandedCategories.includes(category);
-                                        const selectedCount = categoryTerms.filter(t => selectedTermIds.includes(t.id)).length;
-                                        const allSelected = selectedCount === categoryTerms.length;
-
-                                        return (
-                                            <div key={category} className="border border-gray-200 rounded-lg overflow-hidden">
-                                                <div
-                                                    className="flex items-center justify-between p-3 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
-                                                    onClick={() => toggleCategory(category)}
-                                                >
-                                                    <div className="flex items-center gap-2 overflow-hidden">
-                                                        {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-500 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />}
-                                                        <span className="font-medium text-sm text-gray-700 truncate">{category}</span>
-                                                    </div>
-                                                    <div className="flex gap-2 items-center flex-shrink-0" onClick={e => e.stopPropagation()}>
-                                                        <span className="text-xs text-gray-500">
-                                                            {selectedCount}/{categoryTerms.length}
-                                                        </span>
-                                                        <button
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                allSelected ? deselectAllInCategory(category) : selectAllInCategory(category);
-                                                            }}
-                                                            className="text-xs px-2 py-1.5 rounded-md bg-white border border-gray-200 text-gray-600 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-all shadow-sm"
-                                                        >
-                                                            {allSelected ? 'None' : 'All'}
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                {isExpanded && (
-                                                    <div className="p-2 space-y-1 bg-white border-t border-gray-100">
-                                                        {categoryTerms.map(term => (
-                                                            <label
-                                                                key={term.id}
-                                                                className={`flex items-start gap-3 p-2 rounded-md cursor-pointer transition-all ${selectedTermIds.includes(term.id)
-                                                                    ? 'bg-blue-50/50 border border-blue-100'
-                                                                    : 'hover:bg-gray-50 border border-transparent'
-                                                                    }`}
-                                                            >
-                                                                <div className="flex-shrink-0 mt-0.5">
-                                                                    <div
-                                                                        className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedTermIds.includes(term.id)
-                                                                            ? 'bg-blue-600 border-blue-600 text-white'
-                                                                            : 'border-gray-300 bg-white'
-                                                                            }`}
-                                                                    >
-                                                                        {selectedTermIds.includes(term.id) && <Check className="w-3 h-3" />}
-                                                                    </div>
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={selectedTermIds.includes(term.id)}
-                                                                        onChange={() => toggleTerm(term.id)}
-                                                                        className="sr-only"
-                                                                    />
-                                                                </div>
-                                                                <div className="flex-1 min-w-0">
-                                                                    {term.title && (
-                                                                        <div className="text-xs font-semibold text-gray-800 mb-0.5">{term.title}</div>
-                                                                    )}
-                                                                    <div className="text-xs text-gray-600 whitespace-pre-wrap leading-relaxed">{term.content}</div>
-                                                                </div>
-                                                            </label>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
+                            <Editor
+                                licenseKey="gpl"
+                                value={termsContent}
+                                onEditorChange={(newContent) => setTermsContent(newContent)}
+                                init={{
+                                    height: 400,
+                                    menubar: false,
+                                    plugins: ['advlist', 'lists', 'link', 'table', 'autolink', 'nonbreaking'],
+                                    nonbreaking_force_tab: true,
+                                    toolbar:
+                                        'undo redo | blocks fontsize forecolor | ' +
+                                        'bold italic underline strikethrough | ' +
+                                        'bullist numlist indent outdent | ' +
+                                        'table link | removeformat',
+                                    table_toolbar: 'tableprops tabledelete | tableinsertrowbefore tableinsertrowafter tabledeleterow | tableinsertcolbefore tableinsertcolafter tabledeletecol',
+                                    content_style: 'body { font-family: Arial, sans-serif; font-size: 12px; }',
+                                    branding: false,
+                                    promotion: false,
+                                }}
+                            />
                         </Card>
 
                         {/* Notes */}

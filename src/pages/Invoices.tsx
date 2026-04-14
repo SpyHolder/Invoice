@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, FileText, Eye, Edit2, Trash2 } from 'lucide-react';
+import { Plus, FileText, Eye, Edit2, Trash2, Copy } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Invoice } from '../types';
@@ -114,19 +114,19 @@ export const Invoices = () => {
                         <table className="w-full">
                             <thead>
                                 <tr className="border-b border-gray-200 bg-gray-50/50">
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Invoice #</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Customer</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Date</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Due Date</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Amount</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Status</th>
-                                    <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">Actions</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Invoice #</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Customer</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Date</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Due Date</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Amount</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Status</th>
+                                    <th className="text-right py-2 px-3 text-sm font-medium text-gray-500">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {invoices.map((invoice) => (
                                     <tr key={invoice.id} className="hover:bg-gray-50/50 transition-colors">
-                                        <td className="py-3 px-4">
+                                        <td className="py-2 px-3">
                                             <span
                                                 className="font-medium text-blue-600 hover:text-blue-800 cursor-pointer"
                                                 onClick={() => navigate(`/invoices/${invoice.id}`)}
@@ -134,19 +134,19 @@ export const Invoices = () => {
                                                 {invoice.invoice_number}
                                             </span>
                                         </td>
-                                        <td className="py-3 px-4">
+                                        <td className="py-2 px-3">
                                             <span className="font-medium text-gray-900">{(invoice as any).customer_name || invoice.customer?.company_name || '-'}</span>
                                         </td>
-                                        <td className="py-3 px-4 text-sm text-gray-600">
+                                        <td className="py-2 px-3 text-sm text-gray-600">
                                             {new Date(invoice.date).toLocaleDateString()}
                                         </td>
-                                        <td className="py-3 px-4 text-sm text-gray-600">
+                                        <td className="py-2 px-3 text-sm text-gray-600">
                                             {invoice.due_date ? new Date(invoice.due_date).toLocaleDateString() : '-'}
                                         </td>
-                                        <td className="py-3 px-4 font-medium text-gray-900">
+                                        <td className="py-2 px-3 font-medium text-gray-900">
                                             ${invoice.grand_total?.toFixed(2) || '0.00'}
                                         </td>
-                                        <td className="py-3 px-4">
+                                        <td className="py-2 px-3">
                                             <button
                                                 onClick={() => toggleStatus(invoice)}
                                                 className="focus:outline-none"
@@ -161,7 +161,7 @@ export const Invoices = () => {
                                                 </Badge>
                                             </button>
                                         </td>
-                                        <td className="py-3 px-4 text-right">
+                                        <td className="py-2 px-3 text-right">
                                             <div className="flex justify-end gap-2">
                                                 <button
                                                     onClick={() => navigate(`/invoices/${invoice.id}`)}
@@ -183,6 +183,13 @@ export const Invoices = () => {
                                                     title="Delete Invoice"
                                                 >
                                                     <Trash2 className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => navigate(`/invoices/new?duplicate=${invoice.id}`)}
+                                                    className="p-1 text-gray-400 hover:text-indigo-600 transition-colors"
+                                                    title="Duplicate Invoice"
+                                                >
+                                                    <Copy className="w-4 h-4" />
                                                 </button>
                                             </div>
                                         </td>

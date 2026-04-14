@@ -1,12 +1,20 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2, ArrowLeft } from 'lucide-react';
+
+// Helper: add N days to a date string (YYYY-MM-DD)
+const addDays = (dateStr: string, days: number): string => {
+    const d = new Date(dateStr);
+    d.setDate(d.getDate() + days);
+    return d.toISOString().split('T')[0];
+};
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Partner } from '../types';
 import { api } from '../lib/api';
 // import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { SearchableSelect } from '../components/ui/SearchableSelect';
 
 interface InvoiceLineItem {
     id: string;
@@ -64,14 +72,48 @@ export const InvoiceForm = () => {
         }
     ]);
 
+    // Checkbox state for multi-select
+    const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+
+    const toggleSelectItem = (id: string) => {
+        setSelectedItems(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedItems.size === lineItems.length) {
+            setSelectedItems(new Set());
+        } else {
+            setSelectedItems(new Set(lineItems.map(i => i.id)));
+        }
+    };
+
+    const deleteSelectedItems = () => {
+        if (selectedItems.size === 0) return;
+        const remaining = lineItems.filter(i => !selectedItems.has(i.id));
+        if (remaining.length === 0) {
+            showToast('Cannot delete all items.', 'error');
+            return;
+        }
+        setLineItems(remaining);
+        setSelectedItems(new Set());
+        showToast(`Deleted ${selectedItems.size} item(s)`, 'success');
+    };
+
     useEffect(() => {
         fetchCustomers();
         const doIdParam = searchParams.get('do_id');
         const soIdParam = searchParams.get('so_id');
+        const duplicateId = searchParams.get('duplicate');
 
         if (id) {
             setIsEditMode(true);
             loadInvoice(id);
+        } else if (duplicateId) {
+            loadInvoice(duplicateId, true);
         } else if (doIdParam) {
             handleDOSelection(doIdParam);
         } else if (soIdParam) {
@@ -266,7 +308,7 @@ export const InvoiceForm = () => {
         }
     };
 
-    const loadInvoice = async (invoiceId: string) => {
+    const loadInvoice = async (invoiceId: string, isDuplicate = false) => {
         setLoading(true);
         try {
             const inv = await api.get<any>(`/invoices/${invoiceId}`);
@@ -274,13 +316,13 @@ export const InvoiceForm = () => {
 
             setFormData({
                 customer_id: inv.customer_id,
-                so_id: inv.so_id || '',
-                invoice_number: inv.invoice_number,
-                date: inv.date,
-                due_date: inv.due_date,
+                so_id: isDuplicate ? '' : (inv.so_id || ''),
+                invoice_number: isDuplicate ? '' : inv.invoice_number,
+                date: isDuplicate ? new Date().toISOString().split('T')[0] : inv.date,
+                due_date: isDuplicate ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] : inv.due_date,
                 terms: inv.terms || '30 Days',
                 subject: inv.subject || '',
-                status: inv.payment_status || 'unpaid', // Database uses payment_status
+                status: isDuplicate ? 'unpaid' : (inv.payment_status || 'unpaid'), // Database uses payment_status
                 pricing_mode: inv.billing_type === 'milestone' ? 'milestone' : 'standard',
                 milestone_description: '',
                 milestone_amount: 0,
@@ -428,40 +470,27 @@ export const InvoiceForm = () => {
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Customer <span className="text-red-500">*</span></label>
                             <div className="relative">
-                                <select
+                                <SearchableSelect
                                     value={formData.customer_id}
-                                    onChange={(e) => handleCustomerChange(e.target.value)}
-                                    className="w-full pl-3 pr-8 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none disabled:bg-gray-100 disabled:text-gray-500"
-                                    required
+                                    onChange={(val) => handleCustomerChange(val)}
+                                    options={customers.map(c => ({ label: c.company_name, value: c.id }))}
+                                    placeholder="Select Customer..."
+                                    className="w-full"
                                     disabled={loading}
-                                >
-                                    <option value="">Select Customer...</option>
-                                    {customers.map(c => (
-                                        <option key={c.id} value={c.id}>{c.company_name}</option>
-                                    ))}
-                                </select>
-                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
-                                </div>
+                                />
                             </div>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Linked Sales Order (Optional)</label>
                             <div className="relative">
-                                <select
-                                    value={formData.so_id}
-                                    onChange={(e) => handleSOSelection(e.target.value)}
-                                    className="w-full pl-3 pr-8 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none disabled:bg-gray-100 disabled:text-gray-500"
+                                <SearchableSelect
+                                    value={formData.so_id || ''}
+                                    onChange={(val) => handleSOSelection(val)}
+                                    options={salesOrders.map(so => ({ label: `${so.so_number} - ${so.quotations?.subject}`, value: so.id }))}
+                                    placeholder="Select SO..."
+                                    className="w-full"
                                     disabled={loading}
-                                >
-                                    <option value="">Select SO...</option>
-                                    {salesOrders.map(so => (
-                                        <option key={so.id} value={so.id}>{so.so_number} - {so.quotations?.subject}</option>
-                                    ))}
-                                </select>
-                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
-                                </div>
+                                />
                             </div>
                         </div>
                         <div>
@@ -470,7 +499,16 @@ export const InvoiceForm = () => {
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Due Date <span className="text-red-500">*</span></label>
-                            <input type="date" value={formData.due_date} onChange={e => setFormData({ ...formData, due_date: e.target.value })} className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required />
+                            <div className="flex gap-2">
+                                <input type="date" value={formData.due_date} onChange={e => setFormData({ ...formData, due_date: e.target.value })} className="flex-1 px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required />
+                                <button
+                                    type="button"
+                                    onClick={() => setFormData({ ...formData, due_date: addDays(formData.date || new Date().toISOString().split('T')[0], 30), terms: '30 Days' })}
+                                    className="px-3 py-2 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 hover:border-blue-300 transition-all whitespace-nowrap"
+                                >
+                                    +30 Days
+                                </button>
+                            </div>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Terms</label>
@@ -539,82 +577,115 @@ export const InvoiceForm = () => {
                     )}
 
                     {formData.pricing_mode === 'standard' && (
-                        <div className="mb-4 flex justify-end">
+                        <div className="mb-4 flex items-center justify-end gap-2">
+                            {selectedItems.size > 0 && (
+                                <div className="flex items-center gap-2 mr-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg">
+                                    <span className="text-xs font-medium text-red-700">{selectedItems.size} selected</span>
+                                    <button
+                                        type="button"
+                                        onClick={deleteSelectedItems}
+                                        className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-red-600 bg-red-100 rounded hover:bg-red-200 transition-colors"
+                                    >
+                                        <Trash2 className="w-3 h-3" />
+                                        Delete
+                                    </button>
+                                </div>
+                            )}
                             <Button type="button" onClick={() => setLineItems([...lineItems, { id: Date.now().toString(), item_code: '', item_id: '', description: '', quantity: 1, uom: 'EA', unit_price: 0, total_price: 0 }])} variant="secondary" size="sm">
-                                <Plus className="w-4 h-4 mr-2" /> Add Item
+                                <Plus className="w-4 h-4 mr-1" /> Add Item
                             </Button>
                         </div>
                     )}
 
-                    <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                    <div className="overflow-visible border border-gray-200 rounded-lg">
                         <table className="w-full">
                             <thead>
                                 <tr className="bg-gray-50 border-b border-gray-200">
-                                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Ref/Code</th>
-                                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Qty</th>
-                                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">UOM</th>
-                                    <th className="py-3 px-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Price</th>
-                                    <th className="py-3 px-4 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Total</th>
+                                    {formData.pricing_mode === 'standard' && (
+                                        <th className="py-2 px-2 w-10">
+                                            <input
+                                                type="checkbox"
+                                                checked={lineItems.length > 0 && selectedItems.size === lineItems.length}
+                                                onChange={toggleSelectAll}
+                                                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                            />
+                                        </th>
+                                    )}
+                                    <th className="py-2 px-2 text-left text-xs font-medium text-gray-500 uppercase w-28">Ref/Code</th>
+                                    <th className="py-2 px-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                                    <th className="py-2 px-2 text-left text-xs font-medium text-gray-500 uppercase w-20">Qty</th>
+                                    <th className="py-2 px-2 text-left text-xs font-medium text-gray-500 uppercase w-20">UOM</th>
+                                    <th className="py-2 px-2 text-left text-xs font-medium text-gray-500 uppercase w-28">Price</th>
+                                    <th className="py-2 px-2 text-right text-xs font-medium text-gray-500 uppercase w-28">Total</th>
                                     {formData.pricing_mode === 'standard' && <th className="w-10"></th>}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200 bg-white">
                                 {lineItems.map((item) => (
-                                    <tr key={item.id} className={`group hover:bg-gray-50 transition-colors ${formData.pricing_mode === 'milestone' ? 'bg-gray-50' : ''}`}>
-                                        <td className="p-2">
+                                    <tr key={item.id} className={`group hover:bg-gray-50 transition-colors ${formData.pricing_mode === 'milestone' ? 'bg-gray-50' : ''} ${selectedItems.has(item.id) ? 'bg-blue-50/40' : ''}`}>
+                                        {formData.pricing_mode === 'standard' && (
+                                            <td className="py-1.5 px-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedItems.has(item.id)}
+                                                    onChange={() => toggleSelectItem(item.id)}
+                                                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                                />
+                                            </td>
+                                        )}
+                                        <td className="py-1.5 px-2">
                                             <input
                                                 type="text"
                                                 value={item.item_code}
                                                 onChange={e => handleLineItemChange(item.id, 'item_code', e.target.value)}
-                                                className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
+                                                className="w-full px-2 py-1.5 bg-white text-gray-900 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
                                                 placeholder="Code"
                                                 readOnly={formData.pricing_mode === 'milestone'}
                                             />
                                         </td>
-                                        <td className="p-2">
+                                        <td className="py-1.5 px-2">
                                             <input
                                                 type="text"
                                                 value={item.description}
                                                 onChange={e => handleLineItemChange(item.id, 'description', e.target.value)}
-                                                className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
+                                                className="w-full px-2 py-1.5 bg-white text-gray-900 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
                                                 placeholder="Description"
                                                 readOnly={formData.pricing_mode === 'milestone'}
                                             />
                                         </td>
-                                        <td className="p-2">
+                                        <td className="py-1.5 px-2">
                                             <input
                                                 type="number"
                                                 value={item.quantity}
                                                 onChange={e => handleLineItemChange(item.id, 'quantity', parseFloat(e.target.value))}
-                                                className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                className="w-full px-2 py-1.5 bg-white text-gray-900 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                 min="0"
                                                 readOnly={formData.pricing_mode === 'milestone'}
                                             />
                                         </td>
-                                        <td className="p-2">
+                                        <td className="py-1.5 px-2">
                                             <input
                                                 type="text"
                                                 value={item.uom}
                                                 onChange={e => handleLineItemChange(item.id, 'uom', e.target.value)}
-                                                className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                className="w-full px-2 py-1.5 bg-white text-gray-900 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                 readOnly={formData.pricing_mode === 'milestone'}
                                             />
                                         </td>
-                                        <td className="p-2">
+                                        <td className="py-1.5 px-2">
                                             <div className="relative">
                                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
                                                 <input
                                                     type="number"
                                                     value={item.unit_price}
                                                     onChange={e => handleLineItemChange(item.id, 'unit_price', parseFloat(e.target.value))}
-                                                    className="w-full pl-6 pr-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    className="w-full pl-5 pr-2 py-1.5 bg-white text-gray-900 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                     step="0.01"
                                                     readOnly={formData.pricing_mode === 'milestone'}
                                                 />
                                             </div>
                                         </td>
-                                        <td className="p-4 text-right font-medium text-gray-900">
+                                        <td className="py-1.5 px-2 text-right text-xs font-medium text-gray-900">
                                             ${(item.quantity * item.unit_price).toFixed(2)}
                                         </td>
                                         {formData.pricing_mode === 'standard' && (

@@ -8,6 +8,7 @@ import { Partner } from '../types';
 import { api } from '../lib/api';
 import { processSOConfirmation } from '../lib/stockService';
 import { useToast } from '../contexts/ToastContext';
+import { SearchableSelect } from '../components/ui/SearchableSelect';
 import { Badge } from '../components/ui/Badge';
 
 interface LineItem {
@@ -61,6 +62,58 @@ export const SalesOrderForm = () => {
             ]
         }
     ]);
+
+    const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+
+    const toggleSelectItem = (itemId: string) => {
+        const newSelected = new Set(selectedItems);
+        if (newSelected.has(itemId)) {
+            newSelected.delete(itemId);
+        } else {
+            newSelected.add(itemId);
+        }
+        setSelectedItems(newSelected);
+    };
+
+    const toggleSelectAll = (phaseId: string) => {
+        const phase = phases.find(p => p.id === phaseId);
+        if (!phase) return;
+        
+        const phaseItemIds = phase.items.map(i => i.id);
+        const allSelected = phaseItemIds.length > 0 && phaseItemIds.every(id => selectedItems.has(id));
+        
+        const newSelected = new Set(selectedItems);
+        phaseItemIds.forEach(id => {
+            if (allSelected) {
+                newSelected.delete(id);
+            } else {
+                newSelected.add(id);
+            }
+        });
+        setSelectedItems(newSelected);
+    };
+
+    const deleteSelectedItems = (phaseId: string) => {
+        if (selectedItems.size === 0) return;
+        
+        setPhases(phases.map(p => {
+            if (p.id === phaseId) {
+                return {
+                    ...p,
+                    items: p.items.filter(i => !selectedItems.has(i.id))
+                };
+            }
+            return p;
+        }));
+        
+        // Remove from selection
+        const newSelected = new Set(selectedItems);
+        phases.find(p => p.id === phaseId)?.items.forEach(i => {
+           if (newSelected.has(i.id)) newSelected.delete(i.id);
+        });
+        setSelectedItems(newSelected);
+        showToast(`Deleted selected item(s)`, 'success');
+    };
 
     useEffect(() => {
         fetchCustomers();
@@ -342,24 +395,17 @@ export const SalesOrderForm = () => {
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1.5">Linked Quotation</label>
                             <div className="relative">
-                                <select
-                                    value={formData.quotation_id}
-                                    onChange={async (e) => {
-                                        const qId = e.target.value;
-                                        setFormData({ ...formData, quotation_id: qId });
-                                        if (qId) await loadFromQuotation(qId);
+                                <SearchableSelect
+                                    value={formData.quotation_id || ''}
+                                    onChange={async (val) => {
+                                        setFormData({ ...formData, quotation_id: val });
+                                        if (val) await loadFromQuotation(val);
                                     }}
-                                    className="w-full pl-4 pr-10 py-2.5 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none disabled:bg-gray-50 transition-all shadow-sm hover:border-blue-400"
+                                    options={quotations.map(q => ({ label: `${q.quote_number} - ${q.subject}`, value: q.id }))}
+                                    placeholder="Select Quotation..."
+                                    className="w-full"
                                     disabled={isEditMode}
-                                >
-                                    <option value="">Select Quotation...</option>
-                                    {quotations.map(q => (
-                                        <option key={q.id} value={q.id}>{q.quote_number} - {q.subject}</option>
-                                    ))}
-                                </select>
-                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
-                                    <ChevronDown className="w-4 h-4" />
-                                </div>
+                                />
                             </div>
                             {!formData.quotation_id && (
                                 <div className="flex items-center gap-1.5 mt-2 text-amber-600 bg-amber-50 p-2 rounded text-xs font-medium">
@@ -392,20 +438,36 @@ export const SalesOrderForm = () => {
 
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1.5">Project Schedule (Date)</label>
-                            <div className="relative group">
-                                <div
-                                    className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10"
-                                >
-                                    <CalendarIcon className="h-5 w-5 text-gray-400 group-hover:text-blue-500 transition-colors" />
+                            <div className="flex gap-2">
+                                <div className="relative group flex-1">
+                                    <div
+                                        className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10"
+                                    >
+                                        <CalendarIcon className="h-5 w-5 text-gray-400 group-hover:text-blue-500 transition-colors" />
+                                    </div>
+                                    <input
+                                        ref={dateInputRef}
+                                        type="date"
+                                        value={formData.project_schedule_date}
+                                        onChange={(e) => setFormData({ ...formData, project_schedule_date: e.target.value })}
+                                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 shadow-sm hover:border-blue-400 transition-all cursor-pointer"
+                                        onClick={() => dateInputRef.current?.showPicker()}
+                                    />
                                 </div>
-                                <input
-                                    ref={dateInputRef}
-                                    type="date"
-                                    value={formData.project_schedule_date}
-                                    onChange={(e) => setFormData({ ...formData, project_schedule_date: e.target.value })}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 shadow-sm hover:border-blue-400 transition-all cursor-pointer"
-                                    onClick={() => dateInputRef.current?.showPicker()}
-                                />
+                                <Button
+                                    type="button"
+                                    variant="secondary"
+                                    onClick={() => {
+                                        const date = formData.project_schedule_date ? new Date(formData.project_schedule_date) : new Date();
+                                        if (!isNaN(date.getTime())) {
+                                            date.setDate(date.getDate() + 30);
+                                            setFormData({ ...formData, project_schedule_date: date.toISOString().split('T')[0] });
+                                        }
+                                    }}
+                                    className="whitespace-nowrap shadow-sm text-xs"
+                                >
+                                    +30 Days
+                                </Button>
                             </div>
                         </div>
                     </div>
@@ -454,67 +516,103 @@ export const SalesOrderForm = () => {
                                 </div>
                             </div>
 
+                            {/* Phase Selected Items Actions */}
+                            {phase.items.some(i => selectedItems.has(i.id)) && (
+                                <div className="bg-blue-50/50 border border-blue-100 rounded flex items-center justify-between px-3 py-1.5 mb-3 text-sm animate-in fade-in slide-in-from-top-2">
+                                    <span className="text-blue-800 font-medium">
+                                        {phase.items.filter(i => selectedItems.has(i.id)).length} selected in this phase
+                                    </span>
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => deleteSelectedItems(phase.id)}
+                                            className="custom-btn-danger px-2.5 py-1 flex items-center gap-1.5 text-xs font-semibold rounded shadow-sm hover:shadow-md transition-all active:scale-95"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                            Delete Selected
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Items Table */}
-                            <div className="overflow-x-auto">
+                            <div className="overflow-visible">
                                 <table className="w-full">
-                                    <thead className="bg-gray-50/50 text-xs text-gray-500 uppercase font-medium border-b border-gray-100">
+                                    <thead className="bg-gray-50/50 border-b border-gray-100">
                                         <tr>
-                                            <th className="px-4 py-3 text-left w-[50%] pl-6">Description</th>
-                                            <th className="px-4 py-3 text-left w-[20%]">Qty</th>
-                                            <th className="px-4 py-3 text-left w-[20%]">UOM</th>
-                                            <th className="px-4 py-3 text-center w-[10%] pr-6">Action</th>
+                                            <th className="py-2 px-1 w-10 text-center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={phase.items.length > 0 && phase.items.every(i => selectedItems.has(i.id))}
+                                                    onChange={() => toggleSelectAll(phase.id)}
+                                                    className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                />
+                                            </th>
+                                            <th className="py-2 px-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider w-[50%]">Description</th>
+                                            <th className="py-2 px-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider w-[20%]">Qty</th>
+                                            <th className="py-2 px-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider w-[20%]">UOM</th>
+                                            <th className="py-2 px-2 text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wider w-[10%]">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
                                         {phase.items.map((item) => (
-                                            <tr key={item.id} className="group hover:bg-blue-50/30 transition-colors">
-                                                <td className="px-4 py-3 pl-6">
+                                            <tr key={item.id} className="group hover:bg-gray-50/50 transition-colors">
+                                                <td className="py-1.5 px-1 text-center align-middle">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedItems.has(item.id)}
+                                                        onChange={() => toggleSelectItem(item.id)}
+                                                        className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                    />
+                                                </td>
+                                                <td className="py-1.5 px-1.5 align-middle">
                                                     <input
                                                         type="text"
                                                         value={item.description}
                                                         onChange={(e) => handleItemChange(phase.id, item.id, 'description', e.target.value)}
                                                         placeholder="Item description"
-                                                        className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
+                                                        className="w-full px-2 py-1 bg-white text-gray-900 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                     />
                                                 </td>
-                                                <td className="px-4 py-3">
+                                                <td className="py-1.5 px-1.5 align-middle">
                                                     <input
                                                         type="number"
                                                         min="1"
                                                         value={item.quantity}
                                                         onChange={(e) => handleItemChange(phase.id, item.id, 'quantity', parseFloat(e.target.value))}
-                                                        className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                        className="w-full px-2 py-1 bg-white text-gray-900 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                     />
                                                 </td>
-                                                <td className="px-4 py-3">
+                                                <td className="py-1.5 px-1.5 align-middle">
                                                     <div className="relative">
                                                         <select
                                                             value={item.uom}
                                                             onChange={(e) => handleItemChange(phase.id, item.id, 'uom', e.target.value)}
-                                                            className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none cursor-pointer hover:border-blue-400 transition-colors"
+                                                            className="w-full pl-2 pr-7 py-1 bg-white text-gray-900 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
                                                         >
                                                             <option value="EA">EA</option>
                                                             <option value="Lot">Lot</option>
                                                             <option value="Nos">Nos</option>
+                                                            <option value="PCS">PCS</option>
                                                         </select>
-                                                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                                                        <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
                                                     </div>
                                                 </td>
-                                                <td className="px-4 py-3 text-center pr-6">
+                                                <td className="py-1.5 px-1.5 text-center align-middle">
                                                     <button
                                                         type="button"
                                                         onClick={() => handleRemoveItem(phase.id, item.id)}
-                                                        className="text-gray-300 hover:text-red-500 hover:bg-red-50 p-2 rounded-md transition-colors"
+                                                        className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
                                                         title="Remove Item"
                                                     >
-                                                        <Trash2 className="w-4 h-4" />
+                                                        <Trash2 className="w-3.5 h-3.5" />
                                                     </button>
                                                 </td>
                                             </tr>
                                         ))}
                                         {phase.items.length === 0 && (
                                             <tr>
-                                                <td colSpan={4} className="text-center text-gray-400 py-12 text-sm italic bg-gray-50/30">
+                                                <td colSpan={5} className="text-center text-gray-400 py-8 text-sm italic bg-gray-50/30">
                                                     No items added to this phase yet.
                                                 </td>
                                             </tr>

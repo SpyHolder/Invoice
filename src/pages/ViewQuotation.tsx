@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, FileCheck, Printer } from 'lucide-react';
 import { Button } from '../components/ui/Button';
-import { Quotation, QuotationItem, Partner, Company, QuotationTerm } from '../types';
+import { Quotation, QuotationItem, Partner, Company } from '../types';
 import { api } from '../lib/api';
 import { QuotationTemplate } from '../components/QuotationTemplate';
 import { useReactToPrint } from 'react-to-print';
@@ -16,7 +16,7 @@ export const ViewQuotation = () => {
     const [customer, setCustomer] = useState<Partner | null>(null);
     const [items, setItems] = useState<QuotationItem[]>([]);
     const [company, setCompany] = useState<Company | undefined>(undefined);
-    const [selectedTerms, setSelectedTerms] = useState<QuotationTerm[]>([]);
+
     const [loading, setLoading] = useState(true);
 
     const handlePrint = useReactToPrint({
@@ -55,28 +55,6 @@ export const ViewQuotation = () => {
                 console.error('Error fetching company', e);
             }
 
-            // Fetch selected terms
-            const selectedTermsData = quotationData.selected_terms || [];
-            
-            if (selectedTermsData.length > 0) {
-                // Fetch master terms to get details
-                const masterTerms = await api.get<any[]>('/terms');
-                
-                if (masterTerms) {
-                    const selectedTermIds = selectedTermsData.map((st: any) => st.term_id);
-                    const terms = masterTerms.filter(t => selectedTermIds.includes(t.id));
-
-                    // Sort by category and sort_order
-                    terms.sort((a, b) => {
-                        if (a.category !== b.category) {
-                            return a.category.localeCompare(b.category);
-                        }
-                        return a.sort_order - b.sort_order;
-                    });
-
-                    setSelectedTerms(terms);
-                }
-            }
 
         } catch (error) {
             console.error('Error fetching quotation:', error);
@@ -173,7 +151,7 @@ export const ViewQuotation = () => {
                         customer={customer}
                         items={items}
                         company={company}
-                        selectedTerms={selectedTerms}
+                        termsContent={quotation.terms_content || ''}
                     />
                 </div>
             </div>

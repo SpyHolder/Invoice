@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Eye, Edit, CheckCircle, ShoppingCart } from 'lucide-react';
+import { Plus, Eye, Edit, CheckCircle, ShoppingCart, Truck } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { api } from '../lib/api';
 import { useToast } from '../contexts/ToastContext';
@@ -14,6 +14,8 @@ export const SalesOrders = () => {
     const [orders, setOrders] = useState<any[]>([]); // Using any for joined data convenience
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
+
+    const [deliveryStatuses, setDeliveryStatuses] = useState<Record<string, any>>({});
 
     useEffect(() => {
         fetchOrders();
@@ -34,6 +36,19 @@ export const SalesOrders = () => {
             }
             
             setOrders(filteredOrders);
+
+            // Fetch delivery progress for confirmed orders
+            const confirmedOrders = filteredOrders.filter(so => so.status === 'confirmed');
+            const progressMap: Record<string, any> = {};
+            await Promise.all(
+                confirmedOrders.map(async (so) => {
+                    try {
+                        const prog = await api.get<any>(`/sales-orders/${so.id}/delivery-progress`);
+                        if (prog) progressMap[so.id] = prog;
+                    } catch { /* ignore */ }
+                })
+            );
+            setDeliveryStatuses(progressMap);
         } catch (error) {
             console.error('Error fetching sales orders:', error);
             showToast('Failed to fetch sales orders', 'error');
@@ -133,18 +148,19 @@ export const SalesOrders = () => {
                         <table className="w-full">
                             <thead>
                                 <tr className="border-b border-gray-200 bg-gray-50/50">
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">SO Number</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Customer</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Customer PO</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Date</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Status</th>
-                                    <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">Actions</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">SO Number</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Customer</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Customer PO</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Date</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Status</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Delivery</th>
+                                    <th className="text-right py-2 px-3 text-sm font-medium text-gray-500">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {orders.map((so) => (
                                     <tr key={so.id} className="hover:bg-gray-50/50 transition-colors">
-                                        <td className="py-3 px-4">
+                                        <td className="py-2 px-3">
                                             <span
                                                 className="font-medium text-blue-600 hover:text-blue-800 cursor-pointer"
                                                 onClick={() => navigate(`/sales-orders/${so.id}`)}
@@ -152,7 +168,7 @@ export const SalesOrders = () => {
                                                 {so.so_number}
                                             </span>
                                         </td>
-                                        <td className="py-3 px-4">
+                                        <td className="py-2 px-3">
                                             <div className="flex items-center gap-2">
                                                 <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-[10px]">
                                                     {(so.customer_name || '?').substring(0, 2).toUpperCase()}
@@ -160,13 +176,13 @@ export const SalesOrders = () => {
                                                 <span className="font-medium text-gray-900">{so.customer_name || '-'}</span>
                                             </div>
                                         </td>
-                                        <td className="py-3 px-4 text-sm text-gray-600">
+                                        <td className="py-2 px-3 text-sm text-gray-600">
                                             {so.customer_po_number || <span className="text-gray-400 italic">None</span>}
                                         </td>
-                                        <td className="py-3 px-4 text-sm text-gray-600">
+                                        <td className="py-2 px-3 text-sm text-gray-600">
                                             {new Date(so.project_schedule_date || so.created_at).toLocaleDateString()}
                                         </td>
-                                        <td className="py-3 px-4">
+                                        <td className="py-2 px-3">
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); toggleStatus(so); }}
                                                 className="focus:outline-none"
@@ -181,7 +197,27 @@ export const SalesOrders = () => {
                                                 </Badge>
                                             </button>
                                         </td>
-                                        <td className="py-3 px-4 text-right">
+                                        <td className="py-2 px-3">
+                                            {so.status === 'confirmed' && deliveryStatuses[so.id] ? (
+                                                <div className="flex items-center gap-1.5">
+                                                    <Truck className={`w-3.5 h-3.5 ${
+                                                        deliveryStatuses[so.id].delivery_status === 'Fully Delivered' ? 'text-green-500' :
+                                                        deliveryStatuses[so.id].delivery_status === 'Partially Delivered' ? 'text-yellow-500' :
+                                                        'text-gray-400'
+                                                    }`} />
+                                                    <Badge variant={
+                                                        deliveryStatuses[so.id].delivery_status === 'Fully Delivered' ? 'success' :
+                                                        deliveryStatuses[so.id].delivery_status === 'Partially Delivered' ? 'warning' :
+                                                        'default'
+                                                    }>
+                                                        {deliveryStatuses[so.id].delivery_status}
+                                                    </Badge>
+                                                </div>
+                                            ) : (
+                                                <span className="text-xs text-gray-400">—</span>
+                                            )}
+                                        </td>
+                                        <td className="py-2 px-3 text-right">
                                             <div className="flex justify-end gap-2">
                                                 <button
                                                     onClick={() => navigate(`/sales-orders/${so.id}`)}

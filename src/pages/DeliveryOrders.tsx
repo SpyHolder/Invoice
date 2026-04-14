@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Eye, Edit, FileText } from 'lucide-react';
+import { Plus, Eye, Edit, FileText, Copy } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { SearchInput } from '../components/ui/SearchInput';
@@ -122,13 +122,13 @@ export const DeliveryOrders = () => {
                         <table className="w-full">
                             <thead>
                                 <tr className="border-b border-gray-200 bg-gray-50/50">
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">DO Number</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">SO Ref</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Customer</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Date</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Subject</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Status</th>
-                                    <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">Actions</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">DO Number</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">SO Ref</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Customer</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Date</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Subject</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Status</th>
+                                    <th className="text-right py-2 px-3 text-sm font-medium text-gray-500">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
@@ -141,16 +141,16 @@ export const DeliveryOrders = () => {
                                 ) : (
                                     orders.map((doRecord) => (
                                         <tr key={doRecord.id} className="hover:bg-gray-50/50 transition-colors">
-                                            <td className="py-3 px-4 text-sm font-medium text-gray-900">{doRecord.do_number}</td>
-                                            <td className="py-3 px-4 text-sm text-gray-600">{doRecord.so_number || '-'}</td>
-                                            <td className="py-3 px-4 text-sm text-gray-600">
+                                            <td className="py-2 px-3 text-sm font-medium text-gray-900">{doRecord.do_number}</td>
+                                            <td className="py-2 px-3 text-sm text-gray-600">{doRecord.so_number || '-'}</td>
+                                            <td className="py-2 px-3 text-sm text-gray-600">
                                                 {doRecord.customer_name || '-'}
                                             </td>
-                                            <td className="py-3 px-4 text-sm text-gray-600">
+                                            <td className="py-2 px-3 text-sm text-gray-600">
                                                 {new Date(doRecord.date).toLocaleDateString()}
                                             </td>
-                                            <td className="py-3 px-4 text-sm text-gray-600">{doRecord.subject || '-'}</td>
-                                            <td className="py-3 px-4">
+                                            <td className="py-2 px-3 text-sm text-gray-600">{doRecord.subject || '-'}</td>
+                                            <td className="py-2 px-3">
                                                 <select
                                                     value={doRecord.status || 'pending'}
                                                     onChange={(e) => updateStatus(doRecord, e.target.value, doRecord.status || 'pending')}
@@ -167,7 +167,7 @@ export const DeliveryOrders = () => {
                                                     <option value="cancelled">CANCELLED</option>
                                                 </select>
                                             </td>
-                                            <td className="py-3 px-4 text-right">
+                                            <td className="py-2 px-3 text-right">
                                                 <div className="flex justify-end gap-2">
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); navigate(`/delivery-orders/${doRecord.id}`); }}
@@ -189,6 +189,13 @@ export const DeliveryOrders = () => {
                                                         title="Create Invoice"
                                                     >
                                                         <FileText className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); navigate(`/delivery-orders/new?duplicate=${doRecord.id}`); }}
+                                                        className="p-1 text-gray-400 hover:text-indigo-600 transition-colors"
+                                                        title="Duplicate DO"
+                                                    >
+                                                        <Copy className="w-4 h-4" />
                                                     </button>
                                                 </div>
                                             </td>

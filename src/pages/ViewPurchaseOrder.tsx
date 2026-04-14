@@ -115,6 +115,7 @@ export const ViewPurchaseOrder = () => {
                             vendor={vendor}
                             items={items}
                             company={company}
+                            termsContent={po.terms_content || ''}
                         />
                     ) : (
                         <div className="bg-white p-8 text-center text-red-500">

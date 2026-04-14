@@ -1,12 +1,22 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Plus, Trash2, ArrowLeft, ChevronDown, ChevronUp, Check } from 'lucide-react';
+import { Plus, Trash2, ArrowLeft, ChevronDown } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Partner, Item, QuotationTerm, TERM_CATEGORIES, TermCategoryName } from '../types';
+import { Partner, Item } from '../types';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { SearchableSelect } from '../components/ui/SearchableSelect';
+import { Editor } from '@tinymce/tinymce-react';
+import '../lib/tinymce';
+
+// Helper: add N days to a date string (YYYY-MM-DD)
+const addDays = (dateStr: string, days: number): string => {
+    const d = new Date(dateStr);
+    d.setDate(d.getDate() + days);
+    return d.toISOString().split('T')[0];
+};
 
 interface LineItem {
     id: string;
@@ -31,10 +41,8 @@ export const QuotationForm = () => {
     const [loading, setLoading] = useState(false);
     const [isEditMode, setIsEditMode] = useState(false);
 
-    // Available and selected terms
-    const [availableTerms, setAvailableTerms] = useState<QuotationTerm[]>([]);
-    const [selectedTermIds, setSelectedTermIds] = useState<string[]>([]);
-    const [expandedCategories, setExpandedCategories] = useState<TermCategoryName[]>([...TERM_CATEGORIES]);
+    // Terms content
+    const [termsContent, setTermsContent] = useState('');
 
     const [formData, setFormData] = useState({
         customer_id: '',
@@ -62,14 +70,55 @@ export const QuotationForm = () => {
         },
     ]);
 
-    useEffect(() => {
-        fetchCustomers();
-        fetchItems();
-        fetchAvailableTerms();
-        if (id) {
-            setIsEditMode(true);
-            loadQuotation(id);
+    // Checkbox state for multi-select
+    const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+
+    const toggleSelectItem = (id: string) => {
+        setSelectedItems(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedItems.size === lineItems.length) {
+            setSelectedItems(new Set());
+        } else {
+            setSelectedItems(new Set(lineItems.map(i => i.id)));
         }
+    };
+
+    const deleteSelectedItems = () => {
+        if (selectedItems.size === 0) return;
+        const remaining = lineItems.filter(i => !selectedItems.has(i.id));
+        // Always keep at least one item
+        if (remaining.length === 0) {
+            showToast('Cannot delete all items. At least one item is required.', 'error');
+            return;
+        }
+        setLineItems(remaining);
+        setSelectedItems(new Set());
+        showToast(`Deleted ${selectedItems.size} item(s)`, 'success');
+    };
+
+    useEffect(() => {
+        const init = async () => {
+            fetchCustomers();
+            const masterItems = await fetchItems();
+            const params = new URLSearchParams(window.location.search);
+            const duplicateId = params.get('duplicate');
+            if (id) {
+                setIsEditMode(true);
+                await loadQuotation(id, false, masterItems);
+            } else if (duplicateId) {
+                await loadQuotation(duplicateId, true, masterItems);
+            } else {
+                // Load default terms for new quotation
+                loadDefaultTerms();
+            }
+        };
+        init();
     }, [id]);
 
     const fetchCustomers = async () => {
@@ -79,26 +128,25 @@ export const QuotationForm = () => {
 
     const fetchItems = async () => {
         const data = await api.get<Item[]>('/items');
-        if (data) setItems(data);
+        if (data) {
+            setItems(data);
+            return data;
+        }
+        return [];
     };
 
-    const fetchAvailableTerms = async () => {
+    const loadDefaultTerms = async () => {
         try {
-            const data = await api.get<QuotationTerm[]>('/terms');
+            const data = await api.get<any>('/terms/default');
             if (data) {
-                // Filter active terms explicitly just in case
-                const activeTerms = data.filter(t => t.is_active);
-                setAvailableTerms(activeTerms);
-                if (!id) {
-                    setSelectedTermIds(activeTerms.map(t => t.id));
-                }
+                setTermsContent(data.content || '');
             }
         } catch (error) {
-            console.error('Error fetching terms:', error);
+            console.error('Error loading default terms:', error);
         }
     };
 
-    const loadQuotation = async (quotationId: string) => {
+    const loadQuotation = async (quotationId: string, isDuplicate = false, masterItems: Item[] = []) => {
         setLoading(true);
         try {
             const quotation = await api.get<any>(`/quotations/${quotationId}`);
@@ -106,8 +154,8 @@ export const QuotationForm = () => {
             if (quotation) {
                 setFormData({
                     customer_id: quotation.customer_id,
-                    date: new Date(quotation.date).toISOString().split('T')[0],
-                    valid_until: quotation.validity_date ? new Date(quotation.validity_date).toISOString().split('T')[0] : '',
+                    date: isDuplicate ? new Date().toISOString().split('T')[0] : new Date(quotation.date).toISOString().split('T')[0],
+                    valid_until: isDuplicate ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] : (quotation.validity_date ? new Date(quotation.validity_date).toISOString().split('T')[0] : ''),
                     subject: quotation.subject || '',
                     contact: quotation.contact || '',
                     rfq_ref_no: quotation.rfq_ref_no || '',
@@ -116,24 +164,42 @@ export const QuotationForm = () => {
                 });
 
                 if (quotation.items && quotation.items.length > 0) {
-                    const loadedItems = quotation.items.map((item: any, index: number) => ({
-                        id: `loaded-${index}`,
-                        item_id: item.item_id || '',
-                        item_name: item.item_name || '',
-                        item_description: item.item_description || '',
-                        quantity: item.quantity,
-                        unit_price: item.unit_price,
-                        disc_percent: item.disc_percent,
-                        disc_amount: item.disc_amount,
-                        uom: item.uom || 'EA',
-                        total_price: item.total_price,
-                    }));
+                    const loadedItems = quotation.items.map((item: any, index: number) => {
+                        let matchedItemId = item.item_id || '';
+
+                        // Auto-match if item_id is missing or doesn't match items list
+                        if (!matchedItemId || !masterItems.find(i => i.id == matchedItemId)) {
+                            const match = masterItems.find(i =>
+                                (i.name && item.item_name && String(i.name).toLowerCase() === String(item.item_name).toLowerCase()) ||
+                                (i.name && item.item_description && String(i.name).toLowerCase() === String(item.item_description).toLowerCase())
+                            );
+                            if (match) {
+                                matchedItemId = match.id;
+                            }
+                        }
+
+                        return {
+                            id: `loaded-${index}`,
+                            item_id: matchedItemId,
+                            item_name: item.item_name || '',
+                            item_description: item.item_description || '',
+                            quantity: item.quantity,
+                            unit_price: item.unit_price,
+                            disc_percent: item.disc_percent,
+                            disc_amount: item.disc_amount,
+                            uom: item.uom || 'EA',
+                            total_price: item.total_price,
+                        };
+                    });
                     setLineItems(loadedItems);
                 }
 
                 if (quotation.selected_terms) {
-                    setSelectedTermIds(quotation.selected_terms.map((t: any) => t.term_id));
+                    // Legacy: ignore old selected_terms
                 }
+
+                // Load terms_content
+                setTermsContent(quotation.terms_content || '');
             }
         } catch (error: any) {
             console.error('Error loading quotation:', error);
@@ -217,32 +283,7 @@ export const QuotationForm = () => {
         return { subtotal, headerDiscount, gstAmount, total };
     };
 
-    // Terms selection handlers
-    const toggleTerm = (termId: string) => {
-        setSelectedTermIds(prev =>
-            prev.includes(termId)
-                ? prev.filter(id => id !== termId)
-                : [...prev, termId]
-        );
-    };
 
-    const toggleCategory = (category: TermCategoryName) => {
-        setExpandedCategories(prev =>
-            prev.includes(category)
-                ? prev.filter(c => c !== category)
-                : [...prev, category]
-        );
-    };
-
-    const selectAllInCategory = (category: TermCategoryName) => {
-        const categoryTermIds = availableTerms.filter(t => t.category === category).map(t => t.id);
-        setSelectedTermIds(prev => [...new Set([...prev, ...categoryTermIds])]);
-    };
-
-    const deselectAllInCategory = (category: TermCategoryName) => {
-        const categoryTermIds = availableTerms.filter(t => t.category === category).map(t => t.id);
-        setSelectedTermIds(prev => prev.filter(id => !categoryTermIds.includes(id)));
-    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -263,8 +304,6 @@ export const QuotationForm = () => {
                 total_price: item.total_price
             }));
 
-            const termsToSubmit = selectedTermIds.map(termId => ({ term_id: termId }));
-
             const quotationData = {
                 customer_id: formData.customer_id,
                 date: formData.date,
@@ -278,7 +317,7 @@ export const QuotationForm = () => {
                 total_amount: totals.total,
                 total: totals.total,
                 items: itemsToSubmit,
-                selected_terms: termsToSubmit
+                terms_content: termsContent
             };
 
             if (isEditMode && id) {
@@ -306,11 +345,7 @@ export const QuotationForm = () => {
 
     const totals = calculateTotals();
 
-    // Group terms by category
-    const termsByCategory = TERM_CATEGORIES.reduce((acc, category) => {
-        acc[category] = availableTerms.filter(t => t.category === category);
-        return acc;
-    }, {} as Record<TermCategoryName, QuotationTerm[]>);
+
 
     return (
         <div className="space-y-6">
@@ -339,24 +374,13 @@ export const QuotationForm = () => {
                             <label className="block text-sm font-medium text-gray-700 mb-1.5">
                                 Customer <span className="text-red-500">*</span>
                             </label>
-                            <div className="relative">
-                                <select
-                                    value={formData.customer_id}
-                                    onChange={(e) => setFormData({ ...formData, customer_id: e.target.value })}
-                                    className="w-full pl-4 pr-10 py-2.5 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none transition-all shadow-sm hover:border-blue-400"
-                                    required
-                                >
-                                    <option value="">Select Customer</option>
-                                    {customers.map((customer) => (
-                                        <option key={customer.id} value={customer.id}>
-                                            {customer.company_name}
-                                        </option>
-                                    ))}
-                                </select>
-                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
-                                    <ChevronDown className="w-4 h-4" />
-                                </div>
-                            </div>
+                            <SearchableSelect
+                                value={formData.customer_id}
+                                onChange={(val) => setFormData({ ...formData, customer_id: val })}
+                                options={customers.map(c => ({ label: c.company_name, value: c.id }))}
+                                placeholder="Select Customer"
+                                className="w-full"
+                            />
                         </div>
 
                         <div>
@@ -417,13 +441,22 @@ export const QuotationForm = () => {
                             <label className="block text-sm font-medium text-gray-700 mb-1.5">
                                 Valid Until
                             </label>
-                            <div className="relative">
-                                <input
-                                    type="date"
-                                    value={formData.valid_until}
-                                    onChange={(e) => setFormData({ ...formData, valid_until: e.target.value })}
-                                    className="w-full px-4 py-2.5 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm hover:border-blue-400"
-                                />
+                            <div className="flex gap-2">
+                                <div className="relative flex-1">
+                                    <input
+                                        type="date"
+                                        value={formData.valid_until}
+                                        onChange={(e) => setFormData({ ...formData, valid_until: e.target.value })}
+                                        className="w-full px-4 py-2.5 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm hover:border-blue-400"
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setFormData({ ...formData, valid_until: addDays(formData.date || new Date().toISOString().split('T')[0], 30) })}
+                                    className="px-3 py-2 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 hover:border-blue-300 transition-all whitespace-nowrap"
+                                >
+                                    +30 Days
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -431,117 +464,144 @@ export const QuotationForm = () => {
 
 
                 <Card>
-                    <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center justify-between mb-4">
                         <h2 className="text-xl font-semibold flex items-center gap-2">
                             <span className="w-1 h-6 bg-blue-600 rounded-full"></span>
                             Line Items
+                            <span className="text-sm font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{lineItems.length}</span>
                         </h2>
-                        <Button type="button" onClick={addLineItem} variant="secondary" size="sm">
-                            <Plus className="w-4 h-4 mr-2" />
-                            Add Item
-                        </Button>
+                        <div className="flex items-center gap-2">
+                            {selectedItems.size > 0 && (
+                                <div className="flex items-center gap-2 mr-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg animate-in fade-in duration-200">
+                                    <span className="text-xs font-medium text-red-700">{selectedItems.size} selected</span>
+                                    <button
+                                        type="button"
+                                        onClick={deleteSelectedItems}
+                                        className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-red-600 bg-red-100 rounded hover:bg-red-200 transition-colors"
+                                    >
+                                        <Trash2 className="w-3 h-3" />
+                                        Delete
+                                    </button>
+                                </div>
+                            )}
+                            <Button type="button" onClick={addLineItem} variant="secondary" size="sm">
+                                <Plus className="w-4 h-4 mr-1" />
+                                Add Item
+                            </Button>
+                        </div>
                     </div>
 
-                    <div className="overflow-x-auto">
+                    <div className="overflow-visible border border-gray-200 rounded-lg">
                         <table className="w-full">
                             <thead>
-                                <tr className="border-b border-gray-200 text-left">
-                                    <th className="py-3 px-2 text-sm font-medium text-gray-700 min-w-[200px]">Items</th>
-                                    <th className="py-3 px-2 text-sm font-medium text-gray-700 w-24">QTY</th>
-                                    <th className="py-3 px-2 text-sm font-medium text-gray-700 w-24">UOM</th>
-                                    <th className="py-3 px-2 text-sm font-medium text-gray-700 w-32">Price</th>
-                                    <th className="py-3 px-2 text-sm font-medium text-gray-700 w-24">Disc %</th>
-                                    <th className="py-3 px-2 text-sm font-medium text-gray-700 w-32 text-right">Total</th>
-                                    <th className="py-3 px-2 text-sm font-medium text-gray-700 w-10"></th>
+                                <tr className="border-b border-gray-200 bg-gray-50/80 text-left">
+                                    <th className="py-2 px-2 w-10">
+                                        <input
+                                            type="checkbox"
+                                            checked={lineItems.length > 0 && selectedItems.size === lineItems.length}
+                                            onChange={toggleSelectAll}
+                                            className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                        />
+                                    </th>
+                                    <th className="py-2 px-1.5 text-xs font-medium text-gray-500 uppercase min-w-[180px]">Items</th>
+                                    <th className="py-2 px-1.5 text-xs font-medium text-gray-500 uppercase w-20">QTY</th>
+                                    <th className="py-2 px-1.5 text-xs font-medium text-gray-500 uppercase w-20">UOM</th>
+                                    <th className="py-2 px-1.5 text-xs font-medium text-gray-500 uppercase w-28">Price</th>
+                                    <th className="py-2 px-1.5 text-xs font-medium text-gray-500 uppercase w-20">Disc %</th>
+                                    <th className="py-2 px-1.5 text-xs font-medium text-gray-500 uppercase w-28 text-right">Total</th>
+                                    <th className="py-2 px-1.5 w-10"></th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {lineItems.map((item) => (
-                                    <tr key={item.id} className="group hover:bg-gray-50/50">
-                                        <td className="py-3 px-2 space-y-2">
-                                            <div className="relative">
-                                                <select
-                                                    value={item.item_id}
-                                                    onChange={(e) => updateLineItem(item.id, 'item_id', e.target.value)}
-                                                    className="w-full pl-3 pr-8 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
-                                                >
-                                                    <option value="">Select Item...</option>
-                                                    {items.map((i) => (
-                                                        <option key={i.id} value={i.id}>
-                                                            {i.name}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                                            </div>
-                                            <textarea
-                                                value={item.item_description}
-                                                onChange={(e) => updateLineItem(item.id, 'item_description', e.target.value)}
-                                                className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px] resize-y"
-                                                placeholder="Description..."
-                                                required
+                                    <tr key={item.id} className={`group hover:bg-gray-50/50 transition-colors ${selectedItems.has(item.id) ? 'bg-blue-50/40' : ''}`}>
+                                        <td className="py-1.5 px-2 align-top">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedItems.has(item.id)}
+                                                onChange={() => toggleSelectItem(item.id)}
+                                                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer mt-2"
                                             />
                                         </td>
-                                        <td className="py-3 px-2 align-top">
+                                        <td className="py-1.5 px-1.5">
+                                            <div className="space-y-1">
+                                                <SearchableSelect
+                                                    value={item.item_id}
+                                                    onChange={(val) => updateLineItem(item.id, 'item_id', val)}
+                                                    options={items.map(i => ({ label: i.name, value: i.id }))}
+                                                    placeholder="Select Item..."
+                                                    className="w-full text-xs"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={item.item_description}
+                                                    onChange={(e) => updateLineItem(item.id, 'item_description', e.target.value)}
+                                                    className="w-full px-2 py-1.5 bg-white text-gray-900 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    placeholder="Description..."
+                                                    required
+                                                />
+                                            </div>
+                                        </td>
+                                        <td className="py-1.5 px-1.5 align-top">
                                             <input
                                                 type="number"
                                                 value={item.quantity}
                                                 onChange={(e) => updateLineItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                                                className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                className="w-full px-2 py-1.5 bg-white text-gray-900 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                 min="1"
                                                 required
                                             />
                                         </td>
-                                        <td className="py-3 px-2 align-top">
+                                        <td className="py-1.5 px-1.5 align-top">
                                             <div className="relative">
                                                 <select
                                                     value={item.uom}
                                                     onChange={(e) => updateLineItem(item.id, 'uom', e.target.value)}
-                                                    className="w-full pl-3 pr-8 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
+                                                    className="w-full pl-2 pr-7 py-1.5 bg-white text-gray-900 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
                                                 >
                                                     <option value="EA">EA</option>
                                                     <option value="Lot">Lot</option>
                                                     <option value="Nos">Nos</option>
                                                     <option value="PCS">PCS</option>
                                                 </select>
-                                                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
                                             </div>
                                         </td>
-                                        <td className="py-3 px-2 align-top">
+                                        <td className="py-1.5 px-1.5 align-top">
                                             <div className="relative">
-                                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
                                                 <input
                                                     type="number"
                                                     value={item.unit_price}
                                                     onChange={(e) => updateLineItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                                                    className="w-full pl-6 pr-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    className="w-full pl-5 pr-2 py-1.5 bg-white text-gray-900 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                     step="0.01"
                                                     required
                                                 />
                                             </div>
                                         </td>
-                                        <td className="py-3 px-2 align-top">
+                                        <td className="py-1.5 px-1.5 align-top">
                                             <input
                                                 type="number"
                                                 value={item.disc_percent}
                                                 onChange={(e) => updateLineItem(item.id, 'disc_percent', parseFloat(e.target.value) || 0)}
-                                                className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                className="w-full px-2 py-1.5 bg-white text-gray-900 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                 step="0.01"
                                                 min="0"
                                                 max="100"
                                             />
                                         </td>
-                                        <td className="py-3 px-2 align-top text-right font-medium text-gray-900">
+                                        <td className="py-1.5 px-1.5 align-top text-right text-xs font-medium text-gray-900">
                                             ${item.total_price.toFixed(2)}
                                         </td>
-                                        <td className="py-3 px-2 align-top text-right">
+                                        <td className="py-1.5 px-1.5 align-top text-right">
                                             <button
                                                 type="button"
                                                 onClick={() => removeLineItem(item.id)}
-                                                className="p-2 text-gray-400 hover:text-red-600 transition-colors rounded-lg hover:bg-red-50"
+                                                className="p-1 text-gray-400 hover:text-red-600 transition-colors rounded hover:bg-red-50"
                                                 disabled={lineItems.length === 1}
                                             >
-                                                <Trash2 className="w-4 h-4" />
+                                                <Trash2 className="w-3.5 h-3.5" />
                                             </button>
                                         </td>
                                     </tr>
@@ -558,63 +618,26 @@ export const QuotationForm = () => {
                                 <span className="w-1 h-6 bg-blue-600 rounded-full"></span>
                                 Terms & Conditions
                             </h2>
-                            {availableTerms.length === 0 ? (
-                                <p className="text-gray-500 text-sm">No terms available.</p>
-                            ) : (
-                                <div className="space-y-3">
-                                    {TERM_CATEGORIES.map(category => {
-                                        const categoryTerms = termsByCategory[category] || [];
-                                        if (categoryTerms.length === 0) return null;
-
-                                        const isExpanded = expandedCategories.includes(category);
-                                        const selectedCount = categoryTerms.filter(t => selectedTermIds.includes(t.id)).length;
-                                        const allSelected = selectedCount === categoryTerms.length;
-
-                                        return (
-                                            <div key={category} className="border border-gray-200 rounded-lg overflow-hidden">
-                                                <div
-                                                    className="flex items-center justify-between p-3 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
-                                                    onClick={() => toggleCategory(category)}
-                                                >
-                                                    <div className="flex items-center gap-2">
-                                                        {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
-                                                        <span className="font-medium text-sm text-gray-900">{category}</span>
-                                                        <span className="text-xs text-gray-500 bg-white px-1.5 py-0.5 rounded border border-gray-200">
-                                                            {selectedCount}/{categoryTerms.length}
-                                                        </span>
-                                                    </div>
-                                                    <button
-                                                        type="button"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            allSelected ? deselectAllInCategory(category) : selectAllInCategory(category);
-                                                        }}
-                                                        className="text-xs font-medium text-blue-600 hover:text-blue-800"
-                                                    >
-                                                        {allSelected ? 'None' : 'All'}
-                                                    </button>
-                                                </div>
-
-                                                {isExpanded && (
-                                                    <div className="p-3 space-y-2 bg-white border-t border-gray-100">
-                                                        {categoryTerms.map(term => (
-                                                            <div key={term.id} className="flex items-start gap-3 p-2 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer" onClick={() => toggleTerm(term.id)}>
-                                                                <div className={`mt-0.5 w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedTermIds.includes(term.id) ? 'bg-blue-600 border-blue-600' : 'border-gray-300 bg-white'}`}>
-                                                                    {selectedTermIds.includes(term.id) && <Check className="w-3 h-3 text-white" />}
-                                                                </div>
-                                                                <div className="text-sm">
-                                                                    {term.title && <span className="font-medium text-gray-900 block">{term.title}</span>}
-                                                                    <span className="text-gray-600 leading-relaxed text-xs">{term.content}</span>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            )}
+                            <Editor
+                                licenseKey="gpl"
+                                value={termsContent}
+                                onEditorChange={(newContent) => setTermsContent(newContent)}
+                                init={{
+                                    height: 400,
+                                    menubar: false,
+                                    plugins: ['advlist', 'lists', 'link', 'table', 'autolink', 'nonbreaking'],
+                                    nonbreaking_force_tab: true,
+                                    toolbar:
+                                        'undo redo | blocks fontsize forecolor | ' +
+                                        'bold italic underline strikethrough | ' +
+                                        'bullist numlist indent outdent | ' +
+                                        'table link | removeformat',
+                                    table_toolbar: 'tableprops tabledelete | tableinsertrowbefore tableinsertrowafter tabledeleterow | tableinsertcolbefore tableinsertcolafter tabledeletecol',
+                                    content_style: 'body { font-family: Arial, sans-serif; font-size: 12px; }',
+                                    branding: false,
+                                    promotion: false,
+                                }}
+                            />
                         </div>
 
                         <div className="w-full md:w-80 space-y-6">

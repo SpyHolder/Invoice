@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, Package } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Plus, Trash2, Package, X, ArrowRightLeft } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { SalesOrderItem, DeliveryOrderItem } from '../types';
 import { api } from '../lib/api';
 import { useToast } from '../contexts/ToastContext';
+import { SearchableSelect } from '../components/ui/SearchableSelect';
 
 interface DOItem extends DeliveryOrderItem {
     so_item_id?: string;
@@ -20,8 +21,6 @@ interface DOGroup {
 
 export const DeliveryOrderForm = () => {
     const { id } = useParams();
-    const [searchParams] = useSearchParams();
-    const soIdParam = searchParams.get('so_id');
     const navigate = useNavigate();
     const { showToast } = useToast();
 
@@ -50,15 +49,156 @@ export const DeliveryOrderForm = () => {
     const [newGroupName, setNewGroupName] = useState('');
     const [qtyInputs, setQtyInputs] = useState<Record<string, number>>({});
 
+    // Checkbox multi-select state
+    const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+    const [selectedAvailableItems, setSelectedAvailableItems] = useState<Set<number>>(new Set());
+    const [showMoveModal, setShowMoveModal] = useState(false);
+
+    const toggleSelectItem = (id: string) => {
+        setSelectedItems(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAvailableItem = (idx: number) => {
+        setSelectedAvailableItems(prev => {
+            const next = new Set(prev);
+            if (next.has(idx)) next.delete(idx); else next.add(idx);
+            return next;
+        });
+    };
+
+    const getAllItems = (): DOItem[] => [
+        ...groups.flatMap(g => g.items),
+        ...ungroupedItems
+    ];
+
+    const toggleSelectAllInGroup = (groupId: string) => {
+        const group = groups.find(g => g.id === groupId);
+        if (!group) return;
+        const allSelected = group.items.every(i => selectedItems.has(i.id || ''));
+        setSelectedItems(prev => {
+            const next = new Set(prev);
+            group.items.forEach(i => { if (allSelected) next.delete(i.id || ''); else next.add(i.id || ''); });
+            return next;
+        });
+    };
+
+    const toggleSelectAllUngrouped = () => {
+        const allSelected = ungroupedItems.every(i => selectedItems.has(i.id || ''));
+        setSelectedItems(prev => {
+            const next = new Set(prev);
+            ungroupedItems.forEach(i => { if (allSelected) next.delete(i.id || ''); else next.add(i.id || ''); });
+            return next;
+        });
+    };
+
+    const deleteSelectedItemsDO = () => {
+        if (selectedItems.size === 0) return;
+        setGroups(prev => prev.map(g => ({ ...g, items: g.items.filter(i => !selectedItems.has(i.id || '')) })));
+        setUngroupedItems(prev => prev.filter(i => !selectedItems.has(i.id || '')));
+        showToast(`Deleted ${selectedItems.size} item(s)`, 'success');
+        setSelectedItems(new Set());
+    };
+
+    const getSelectedItemsList = (): DOItem[] => {
+        return getAllItems().filter(i => selectedItems.has(i.id || ''));
+    };
+
+    const handleBulkMoveToGroup = (targetGroupId: string | null) => {
+        const itemsToMove = getSelectedItemsList();
+        if (itemsToMove.length === 0) return;
+
+        // Remove from current locations
+        const selectedIds = new Set(itemsToMove.map(i => i.id));
+        const newGroups = groups.map(g => ({ ...g, items: g.items.filter(i => !selectedIds.has(i.id)) }));
+        const newUngrouped = ungroupedItems.filter(i => !selectedIds.has(i.id));
+
+        if (targetGroupId) {
+            const targetGroup = newGroups.find(g => g.id === targetGroupId);
+            if (targetGroup) {
+                targetGroup.items = [...targetGroup.items, ...itemsToMove.map(i => ({ ...i, group_name: targetGroup.name }))];
+            }
+        } else {
+            newUngrouped.push(...itemsToMove.map(i => ({ ...i, group_name: null })));
+        }
+
+        setGroups(newGroups);
+        setUngroupedItems(newUngrouped);
+        setSelectedItems(new Set());
+        setShowMoveModal(false);
+        showToast(`Moved ${itemsToMove.length} item(s)`, 'success');
+    };
+
+    const handleBulkAssignAvailableItems = (targetGroupId: string | null) => {
+        if (selectedAvailableItems.size === 0) return;
+        
+        const availableSOItems = getAvailableSOItems();
+        let newGroups = [...groups];
+        let newUngrouped = [...ungroupedItems];
+        let itemsAdded = 0;
+
+        selectedAvailableItems.forEach(idx => {
+            const soItem = availableSOItems[idx];
+            if (!soItem) return;
+            
+            const remaining = soItem.quantity - (
+                newGroups.reduce((acc, g) => acc + g.items.filter(i => i.description === soItem.description).reduce((sum, item) => sum + item.quantity, 0), 0) +
+                newUngrouped.filter(i => i.description === soItem.description).reduce((sum, item) => sum + item.quantity, 0)
+            ) - getTotalAssignedQty(soItem.description || ''); // We need robust checking, actually let's use getRemainingQty
+            // Wait, getRemainingQty queries current state, we need it to use current state but since we process separately, total assigned quantity changes.
+            const currentRemaining = getRemainingQty(soItem);
+            
+            const qtyKey = `so-${idx}`;
+            const currentQty = qtyInputs[qtyKey] ?? currentRemaining;
+            
+            if (currentQty <= 0 || currentQty > currentRemaining) return;
+
+            const newItem: DOItem = {
+                id: `so-${Date.now()}-${Math.random()}`,
+                do_id: '',
+                item_code: '',
+                description: soItem.description || '',
+                quantity: currentQty,
+                uom: soItem.uom,
+                so_item_id: soItem.id,
+                group_name: targetGroupId ? (newGroups.find(g => g.id === targetGroupId)?.name || null) : null
+            };
+
+            if (targetGroupId) {
+                newGroups = newGroups.map(g => g.id === targetGroupId ? { ...g, items: [...g.items, newItem] } : g);
+            } else {
+                newUngrouped.push(newItem);
+            }
+            itemsAdded++;
+        });
+
+        if (itemsAdded > 0) {
+            setGroups(newGroups);
+            setUngroupedItems(newUngrouped);
+            setSelectedAvailableItems(new Set());
+            showToast(`Added ${itemsAdded} item(s)`, 'success');
+        } else {
+            showToast('No items were added due to invalid quantities.', 'error');
+        }
+    };
+
     useEffect(() => {
         fetchSalesOrders();
+        const searchParams = new URLSearchParams(window.location.search);
+        const soIdParam = searchParams.get('so_id');
+        const duplicateId = searchParams.get('duplicate');
         if (id) {
             setIsEditMode(true);
             loadDeliveryOrder(id);
+        } else if (duplicateId) {
+            loadDeliveryOrder(duplicateId, true);
         } else if (soIdParam) {
             handleSOSelection(soIdParam);
         }
-    }, [id, soIdParam]);
+    }, [id]);
 
     const fetchSalesOrders = async () => {
         const data = await api.get<any[]>('/sales-orders');
@@ -75,42 +215,7 @@ export const DeliveryOrderForm = () => {
             const items = so?.items;
 
             if (items) {
-                const allDOs = await api.get<any[]>('/delivery-orders');
-                let existingDOs = allDOs?.filter(d => d.so_id === soId) || [];
-                if (id) existingDOs = existingDOs.filter(d => d.id !== id);
-
-                if (existingDOs.length > 0) {
-                    const deliveredQtyMap = new Map<string, number>();
-                    for (const d of existingDOs) {
-                        const doRecord = await api.get<any>(`/delivery-orders/${d.id}`);
-                        if (doRecord?.items) {
-                            doRecord.items.forEach((item: any) => {
-                                const desc = item.description?.trim().toLowerCase();
-                                if (desc) {
-                                    deliveredQtyMap.set(desc, (deliveredQtyMap.get(desc) || 0) + (item.quantity || 0));
-                                }
-                            });
-                        }
-                    }
-
-                    const itemsWithRemaining = items
-                        .map((item: any) => ({
-                            ...item,
-                            quantity: item.quantity - (deliveredQtyMap.get(item.description?.trim().toLowerCase() || '') || 0)
-                        }))
-                        .filter((item: any) => item.quantity > 0);
-
-                    setAvailableItems(itemsWithRemaining);
-
-                    if (itemsWithRemaining.length < items.length) {
-                        showToast(`${items.length - itemsWithRemaining.length} item(s) fully delivered. Showing remaining.`, 'info');
-                    }
-                } else {
-                    setAvailableItems(items);
-                }
-
-                const uniquePhases = Array.from(new Set(items.map((i: any) => i.phase_name).filter(Boolean) as string[]));
-                setAvailablePhases(uniquePhases);
+                await loadAvailableSOItems(soId, items, id);
             }
 
             // Fetch Customer shipping address
@@ -134,22 +239,72 @@ export const DeliveryOrderForm = () => {
         }
     };
 
-    const loadDeliveryOrder = async (doId: string) => {
+    const loadAvailableSOItems = async (soId: string, items: any[], excludeDoId?: string) => {
+        const allDOs = await api.get<any[]>('/delivery-orders');
+        let existingDOs = allDOs?.filter(d => d.so_id === soId) || [];
+        if (excludeDoId) existingDOs = existingDOs.filter(d => d.id !== excludeDoId);
+
+        if (existingDOs.length > 0) {
+            const deliveredQtyMap = new Map<string, number>();
+            for (const d of existingDOs) {
+                const doRecord = await api.get<any>(`/delivery-orders/${d.id}`);
+                if (doRecord?.items) {
+                    doRecord.items.forEach((item: any) => {
+                        const desc = item.description?.trim().toLowerCase();
+                        if (desc) {
+                            deliveredQtyMap.set(desc, (deliveredQtyMap.get(desc) || 0) + (item.quantity || 0));
+                        }
+                    });
+                }
+            }
+
+            const itemsWithRemaining = items
+                .map((item: any) => ({
+                    ...item,
+                    quantity: item.quantity - (deliveredQtyMap.get(item.description?.trim().toLowerCase() || '') || 0)
+                }))
+                .filter((item: any) => item.quantity > 0);
+
+            setAvailableItems(itemsWithRemaining);
+
+            if (itemsWithRemaining.length < items.length) {
+                showToast(`${items.length - itemsWithRemaining.length} item(s) fully delivered. Showing remaining.`, 'info');
+            }
+        } else {
+            setAvailableItems(items);
+        }
+
+        const uniquePhases = Array.from(new Set(items.map((i: any) => i.phase_name).filter(Boolean) as string[]));
+        setAvailablePhases(uniquePhases);
+    };
+
+    const loadDeliveryOrder = async (doId: string, isDuplicate = false) => {
         setLoading(true);
         try {
             const data = await api.get<any>(`/delivery-orders/${doId}`);
             if (!data) throw new Error('Not found');
 
             setFormData({
-                so_id: data.so_id || '',
-                do_number: data.do_number,
-                date: data.date ? new Date(data.date).toISOString().split('T')[0] : '',
+                so_id: isDuplicate ? '' : (data.so_id || ''),
+                do_number: isDuplicate ? '' : data.do_number,
+                date: isDuplicate ? new Date().toISOString().split('T')[0] : (data.date ? new Date(data.date).toISOString().split('T')[0] : ''),
                 subject: data.subject || '',
                 terms: data.terms || '',
                 requestor_name: data.requestor_name || '',
                 shipping_address_snapshot: data.shipping_address_snapshot || '',
                 customer_id: '',
             });
+
+            if (data.so_id) {
+                try {
+                    const so = await api.get<any>(`/sales-orders/${data.so_id}`);
+                    if (so?.items) {
+                        await loadAvailableSOItems(data.so_id, so.items, isDuplicate ? undefined : doId);
+                    }
+                } catch (e) {
+                    console.error("Failed to load available SO items", e);
+                }
+            }
 
             const items = data.items;
             if (items) {
@@ -264,26 +419,6 @@ export const DeliveryOrderForm = () => {
         showToast(`Group "${group.name}" deleted`, 'info');
     };
 
-    const handleMoveItem = (fromGroupId: string | null, itemId: string, toGroupId: string | null) => {
-        let itemToMove: DOItem | undefined;
-
-        if (fromGroupId) {
-            itemToMove = groups.find(g => g.id === fromGroupId)?.items.find(i => i.id === itemId);
-            setGroups(groups.map(g => g.id === fromGroupId ? { ...g, items: g.items.filter(i => i.id !== itemId) } : g));
-        } else {
-            itemToMove = ungroupedItems.find(i => i.id === itemId);
-            setUngroupedItems(ungroupedItems.filter(i => i.id !== itemId));
-        }
-
-        if (!itemToMove) return;
-
-        if (toGroupId) {
-            setGroups(groups.map(g => g.id === toGroupId ? { ...g, items: [...g.items, { ...itemToMove, group_name: g.name }] } : g));
-        } else {
-            setUngroupedItems([...ungroupedItems, { ...itemToMove, group_name: null }]);
-        }
-    };
-
     // Qty tracking
     const getTotalAssignedQty = (soItemDescription: string): number => {
         let total = 0;
@@ -392,28 +527,19 @@ export const DeliveryOrderForm = () => {
                                 Select Sales Order <span className="text-red-500">*</span>
                             </label>
                             <div className="relative">
-                                <select
-                                    value={formData.so_id}
-                                    onChange={(e) => handleSOSelection(e.target.value)}
-                                    className="w-full pl-3 pr-8 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none disabled:bg-gray-100 disabled:text-gray-500"
+                                <SearchableSelect
+                                    value={formData.so_id || ''}
+                                    onChange={(val) => handleSOSelection(val)}
+                                    options={salesOrders.map(so => ({ label: `${so.so_number} (PO: ${so.customer_po_number || 'N/A'})`, value: so.id }))}
+                                    placeholder="Select Sales Order..."
+                                    className="w-full"
                                     disabled={isEditMode}
-                                    required
-                                >
-                                    <option value="">Select Sales Order...</option>
-                                    {salesOrders.map(so => (
-                                        <option key={so.id} value={so.id}>
-                                            {so.so_number} (PO: {so.customer_po_number || 'N/A'})
-                                        </option>
-                                    ))}
-                                </select>
-                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
-                                </div>
+                                />
                             </div>
                         </div>
 
                         {/* Phase Selection - only show when SO selected and phases exist */}
-                        {formData.so_id && !isEditMode && availablePhases.length > 0 && (
+                        {formData.so_id && availablePhases.length > 0 && (
                             <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
                                 <label className="block text-sm font-medium text-blue-900 mb-3">
                                     Quick Import by Phase (Optional)
@@ -520,25 +646,44 @@ export const DeliveryOrderForm = () => {
                             </span>
                         </h2>
 
-                        {/* Custom Group Creation */}
-                        {!isEditMode && (
-                            <div className="bg-purple-50 p-4 rounded-lg mb-6 border border-purple-100">
-                                <label className="block text-sm font-medium text-purple-900 mb-2">Create Custom Group (Optional)</label>
-                                <div className="flex gap-3">
-                                    <input
-                                        type="text"
-                                        value={newGroupName}
-                                        onChange={(e) => setNewGroupName(e.target.value)}
-                                        onKeyPress={(e) => e.key === 'Enter' && handleCreateCustomGroup()}
-                                        placeholder="Enter group name..."
-                                        className="flex-1 px-3 py-2 bg-white border border-purple-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 placeholder:text-gray-400"
-                                    />
-                                    <Button type="button" onClick={handleCreateCustomGroup} disabled={!newGroupName.trim()} variant="secondary">
-                                        Create
-                                    </Button>
-                                </div>
+
+
+                        <div className="flex items-center justify-between mb-3 text-sm text-gray-600 bg-gray-50 px-4 py-2 border-y border-gray-200">
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    checked={getAvailableSOItems().length > 0 && selectedAvailableItems.size === getAvailableSOItems().length}
+                                    onChange={(e) => {
+                                        if (e.target.checked) {
+                                            setSelectedAvailableItems(new Set(getAvailableSOItems().map((_, i) => i)));
+                                        } else {
+                                            setSelectedAvailableItems(new Set());
+                                        }
+                                    }}
+                                    className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                />
+                                <span className="font-medium">Select All</span>
                             </div>
-                        )}
+                            {selectedAvailableItems.size > 0 && (
+                                <div className="flex items-center gap-3">
+                                    <span className="font-semibold text-blue-700">{selectedAvailableItems.size} selected</span>
+                                    <select
+                                        onChange={(e) => {
+                                            if (e.target.value) {
+                                                handleBulkAssignAvailableItems(e.target.value === '__ungrouped__' ? null : e.target.value);
+                                                e.target.value = '';
+                                            }
+                                        }}
+                                        className="px-3 py-1.5 bg-white border border-blue-300 rounded-lg text-sm text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                                        value=""
+                                    >
+                                        <option value="">Move selected to...</option>
+                                        <option value="__ungrouped__">Ungrouped</option>
+                                        {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                                    </select>
+                                </div>
+                            )}
+                        </div>
 
                         <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
                             {getAvailableSOItems().map((soItem, idx) => {
@@ -547,7 +692,15 @@ export const DeliveryOrderForm = () => {
                                 const currentQty = qtyInputs[qtyKey] ?? remaining;
 
                                 return (
-                                    <div key={idx} className="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-lg hover:border-blue-300 transition-colors shadow-sm">
+                                    <div key={idx} className={`flex items-center gap-4 p-4 border border-gray-200 rounded-lg transition-colors shadow-sm ${selectedAvailableItems.has(idx) ? 'bg-blue-50 border-blue-300' : 'bg-white hover:border-blue-300'}`}>
+                                        <div className="pl-1 text-center items-center flex shrink-0">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedAvailableItems.has(idx)}
+                                                onChange={() => toggleSelectAvailableItem(idx)}
+                                                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                            />
+                                        </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 mb-1">
                                                 <span className="font-medium text-gray-900 truncate">{soItem.description}</span>
@@ -601,7 +754,7 @@ export const DeliveryOrderForm = () => {
 
                 {/* Section 4: Items Review */}
                 <Card>
-                    <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center justify-between mb-4">
                         <h2 className="text-xl font-semibold flex items-center gap-2">
                             <span className="w-1 h-6 bg-blue-600 rounded-full"></span>
                             Delivery Items
@@ -609,10 +762,33 @@ export const DeliveryOrderForm = () => {
                                 {totalItemsCount} items
                             </span>
                         </h2>
-                        <Button type="button" onClick={handleAddUngroupedItem} variant="secondary" size="sm">
-                            <Plus className="w-4 h-4 mr-2" />
-                            Add Manual Item
-                        </Button>
+                        <div className="flex items-center gap-2">
+                            {selectedItems.size > 0 && (
+                                <div className="flex items-center gap-2 mr-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg">
+                                    <span className="text-xs font-medium text-blue-700">{selectedItems.size} selected</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowMoveModal(true)}
+                                        className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-blue-600 bg-blue-100 rounded hover:bg-blue-200 transition-colors"
+                                    >
+                                        <ArrowRightLeft className="w-3 h-3" />
+                                        Move
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={deleteSelectedItemsDO}
+                                        className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-red-600 bg-red-100 rounded hover:bg-red-200 transition-colors"
+                                    >
+                                        <Trash2 className="w-3 h-3" />
+                                        Delete
+                                    </button>
+                                </div>
+                            )}
+                            <Button type="button" onClick={handleAddUngroupedItem} variant="secondary" size="sm">
+                                <Plus className="w-4 h-4 mr-1" />
+                                Add Item
+                            </Button>
+                        </div>
                     </div>
 
                     {/* Grouped Items */}
@@ -642,62 +818,66 @@ export const DeliveryOrderForm = () => {
                                         </button>
                                     </div>
 
-                                    <div className="overflow-x-auto">
+                                    <div className="overflow-visible">
                                         <table className="w-full text-sm">
                                             <thead>
-                                                <tr className="bg-white border-b border-gray-100 text-left text-gray-500 font-medium">
-                                                    <th className="py-2.5 px-4 w-[40%]">Description</th>
-                                                    <th className="py-2.5 px-2 w-24">Qty</th>
-                                                    <th className="py-2.5 px-2 w-24">UOM</th>
-                                                    <th className="py-2.5 px-2 w-40">Move To</th>
-                                                    <th className="py-2.5 px-2 w-10"></th>
+                                                <tr className="bg-white border-b border-gray-100 text-left text-xs text-gray-500 font-medium uppercase">
+                                                    <th className="py-2 px-2 w-10">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={group.items.length > 0 && group.items.every(i => selectedItems.has(i.id || ''))}
+                                                            onChange={() => toggleSelectAllInGroup(group.id)}
+                                                            className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                                        />
+                                                    </th>
+                                                    <th className="py-2 px-2 w-[40%]">Description</th>
+                                                    <th className="py-2 px-2 w-20">Qty</th>
+                                                    <th className="py-2 px-2 w-20">UOM</th>
+                                                    <th className="py-2 px-2 w-10"></th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-50">
                                                 {group.items.map((item) => (
-                                                    <tr key={item.id} className="group hover:bg-gray-50/50 transition-colors">
-                                                        <td className="py-2 px-4">
+                                                    <tr key={item.id} className={`group hover:bg-gray-50/50 transition-colors ${selectedItems.has(item.id || '') ? 'bg-blue-50/40' : ''}`}>
+                                                        <td className="py-1.5 px-2">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedItems.has(item.id || '')}
+                                                                onChange={() => toggleSelectItem(item.id || '')}
+                                                                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                                            />
+                                                        </td>
+                                                        <td className="py-1.5 px-2">
                                                             <input
                                                                 type="text"
                                                                 value={item.description || ''}
                                                                 onChange={(e) => handleItemChange(group.id, item.id || '', 'description', e.target.value)}
-                                                                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm"
+                                                                className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                             />
                                                         </td>
-                                                        <td className="py-2 px-2">
+                                                        <td className="py-1.5 px-2">
                                                             <input
                                                                 type="number"
                                                                 value={item.quantity}
                                                                 onChange={(e) => handleItemChange(group.id, item.id || '', 'quantity', parseFloat(e.target.value))}
-                                                                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-center text-sm"
+                                                                className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                             />
                                                         </td>
-                                                        <td className="py-2 px-2">
+                                                        <td className="py-1.5 px-2">
                                                             <input
                                                                 type="text"
                                                                 value={item.uom || ''}
                                                                 onChange={(e) => handleItemChange(group.id, item.id || '', 'uom', e.target.value)}
-                                                                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-center text-sm"
+                                                                className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                             />
                                                         </td>
-                                                        <td className="py-2 px-2">
-                                                            <select
-                                                                onChange={(e) => { handleMoveItem(group.id, item.id || '', e.target.value === '__ungrouped__' ? null : e.target.value); e.target.value = ''; }}
-                                                                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs cursor-pointer"
-                                                                value=""
-                                                            >
-                                                                <option value="">Move...</option>
-                                                                <option value="__ungrouped__">Ungrouped</option>
-                                                                {groups.filter(g => g.id !== group.id).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                                                            </select>
-                                                        </td>
-                                                        <td className="py-2 px-2 text-center">
+                                                        <td className="py-1.5 px-2 text-center">
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleRemoveItem(group.id, item.id || '')}
-                                                                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                                                className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
                                                             >
-                                                                <Trash2 className="w-4 h-4" />
+                                                                <Trash2 className="w-3.5 h-3.5" />
                                                             </button>
                                                         </td>
                                                     </tr>
@@ -718,61 +898,66 @@ export const DeliveryOrderForm = () => {
                             </div>
 
                             {ungroupedItems.length > 0 ? (
-                                <div className="overflow-x-auto">
+                                <div className="overflow-visible">
                                     <table className="w-full text-sm">
                                         <thead>
-                                            <tr className="bg-white border-b border-gray-100 text-left text-gray-500 font-medium">
-                                                <th className="py-2.5 px-4 w-[40%]">Description</th>
-                                                <th className="py-2.5 px-2 w-24">Qty</th>
-                                                <th className="py-2.5 px-2 w-24">UOM</th>
-                                                <th className="py-2.5 px-2 w-40">Move To</th>
-                                                <th className="py-2.5 px-2 w-10"></th>
-                                            </tr>
+                                                <tr className="bg-white border-b border-gray-100 text-left text-xs text-gray-500 font-medium uppercase">
+                                                    <th className="py-2 px-2 w-10">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={ungroupedItems.length > 0 && ungroupedItems.every(i => selectedItems.has(i.id || ''))}
+                                                            onChange={toggleSelectAllUngrouped}
+                                                            className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                                        />
+                                                    </th>
+                                                    <th className="py-2 px-2 w-[40%]">Description</th>
+                                                    <th className="py-2 px-2 w-20">Qty</th>
+                                                    <th className="py-2 px-2 w-20">UOM</th>
+                                                    <th className="py-2 px-2 w-10"></th>
+                                                </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-50">
                                             {ungroupedItems.map((item) => (
-                                                <tr key={item.id} className="group hover:bg-gray-50/50 transition-colors">
-                                                    <td className="py-2 px-4">
+                                                <tr key={item.id} className={`group hover:bg-gray-50/50 transition-colors ${selectedItems.has(item.id || '') ? 'bg-blue-50/40' : ''}`}>
+                                                    <td className="py-1.5 px-2">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedItems.has(item.id || '')}
+                                                            onChange={() => toggleSelectItem(item.id || '')}
+                                                            className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                                        />
+                                                    </td>
+                                                    <td className="py-1.5 px-2">
                                                         <input
                                                             type="text"
                                                             value={item.description || ''}
                                                             onChange={(e) => handleUngroupedItemChange(item.id || '', 'description', e.target.value)}
-                                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-sm"
+                                                            className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                         />
                                                     </td>
-                                                    <td className="py-2 px-2">
+                                                    <td className="py-1.5 px-2">
                                                         <input
                                                             type="number"
                                                             value={item.quantity}
                                                             onChange={(e) => handleUngroupedItemChange(item.id || '', 'quantity', parseFloat(e.target.value))}
-                                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-center text-sm"
+                                                            className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                         />
                                                     </td>
-                                                    <td className="py-2 px-2">
+                                                    <td className="py-1.5 px-2">
                                                         <input
                                                             type="text"
                                                             value={item.uom || ''}
                                                             onChange={(e) => handleUngroupedItemChange(item.id || '', 'uom', e.target.value)}
-                                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-center text-sm"
+                                                            className="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-xs text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
                                                         />
                                                     </td>
-                                                    <td className="py-2 px-2">
-                                                        <select
-                                                            onChange={(e) => handleMoveItem(null, item.id || '', e.target.value)}
-                                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs cursor-pointer"
-                                                            value=""
-                                                        >
-                                                            <option value="">Move...</option>
-                                                            {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                                                        </select>
-                                                    </td>
-                                                    <td className="py-2 px-2 text-center">
+                                                    <td className="py-1.5 px-2 text-center">
                                                         <button
                                                             type="button"
                                                             onClick={() => handleRemoveUngroupedItem(item.id || '')}
-                                                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                                            className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
                                                         >
-                                                            <Trash2 className="w-4 h-4" />
+                                                            <Trash2 className="w-3.5 h-3.5" />
                                                         </button>
                                                     </td>
                                                 </tr>
@@ -793,6 +978,24 @@ export const DeliveryOrderForm = () => {
                             )}
                         </div>
                     )}
+
+                    {/* Custom Group Creation moved here to always be visible */}
+                    <div className="bg-purple-50 p-4 rounded-lg mb-6 border border-purple-100">
+                        <label className="block text-sm font-medium text-purple-900 mb-2">Create Custom Group</label>
+                        <div className="flex gap-3">
+                            <input
+                                type="text"
+                                value={newGroupName}
+                                onChange={(e) => setNewGroupName(e.target.value)}
+                                onKeyPress={(e) => e.key === 'Enter' && handleCreateCustomGroup()}
+                                placeholder="Enter group name..."
+                                className="flex-1 px-3 py-2 bg-white border border-purple-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 placeholder:text-gray-400"
+                            />
+                            <Button type="button" onClick={handleCreateCustomGroup} disabled={!newGroupName.trim()} variant="secondary">
+                                Create
+                            </Button>
+                        </div>
+                    </div>
                 </Card>
 
                 <div className="flex gap-4 justify-end pt-6 border-t border-gray-200 mt-8 sticky bottom-0 bg-gray-50/80 backdrop-blur-sm p-4 -mx-4 -mb-4 rounded-b-lg">
@@ -804,6 +1007,67 @@ export const DeliveryOrderForm = () => {
                     </Button>
                 </div>
             </form>
+
+            {/* Move to Group Modal */}
+            {showMoveModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden">
+                        <div className="p-4 border-b flex items-center justify-between bg-blue-50">
+                            <h3 className="text-lg font-semibold text-blue-900 flex items-center gap-2">
+                                <ArrowRightLeft className="w-5 h-5 text-blue-600" />
+                                Move {selectedItems.size} Item(s) to Group
+                            </h3>
+                            <button type="button" onClick={() => setShowMoveModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Selected items preview */}
+                        <div className="p-4 border-b max-h-[200px] overflow-y-auto bg-gray-50/50">
+                            <p className="text-xs font-medium text-gray-500 uppercase mb-2">Items to move:</p>
+                            <div className="space-y-1">
+                                {getSelectedItemsList().map(item => (
+                                    <div key={item.id} className="flex items-center gap-2 text-sm bg-white px-3 py-1.5 rounded border border-gray-200">
+                                        <span className="font-medium text-gray-900 truncate flex-1">{item.description || 'No description'}</span>
+                                        <span className="text-xs text-gray-500">{item.quantity} {item.uom}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Target group selection */}
+                        <div className="p-4 flex-1 overflow-y-auto">
+                            <p className="text-xs font-medium text-gray-500 uppercase mb-3">Select target group:</p>
+                            <div className="space-y-2">
+                                <button
+                                    type="button"
+                                    onClick={() => handleBulkMoveToGroup(null)}
+                                    className="w-full text-left px-4 py-3 rounded-lg border border-gray-200 hover:bg-gray-50 hover:border-blue-300 transition-all text-sm font-medium text-gray-700"
+                                >
+                                    Ungrouped
+                                </button>
+                                {groups.map(g => (
+                                    <button
+                                        key={g.id}
+                                        type="button"
+                                        onClick={() => handleBulkMoveToGroup(g.id)}
+                                        className="w-full text-left px-4 py-3 rounded-lg border border-gray-200 hover:bg-blue-50 hover:border-blue-300 transition-all text-sm font-medium text-gray-700"
+                                    >
+                                        {g.name}
+                                        <span className="ml-2 text-xs text-gray-400">({g.items.length} items)</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="p-4 border-t flex justify-end bg-white">
+                            <Button type="button" variant="secondary" onClick={() => setShowMoveModal(false)}>
+                                Cancel
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

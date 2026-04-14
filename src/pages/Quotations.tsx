@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, FileCheck, Eye, ArrowRight, Edit2, Trash2 } from 'lucide-react';
+import { Plus, FileCheck, Eye, ArrowRight, Edit2, Trash2, Copy } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Quotation } from '../types';
@@ -146,26 +146,26 @@ export const Quotations = () => {
                         <table className="w-full">
                             <thead>
                                 <tr className="border-b border-gray-200 bg-gray-50/50">
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Customer</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Quote No</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Date</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Valid Until</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Amount</th>
-                                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Status</th>
-                                    <th className="text-right py-3 px-4 text-sm font-medium text-gray-500">Actions</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Customer</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Quote No</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Date</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Valid Until</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Amount</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Status</th>
+                                    <th className="text-right py-2 px-3 text-sm font-medium text-gray-500">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {quotations.map((quotation) => (
                                     <tr key={quotation.id} className="hover:bg-gray-50/50 transition-colors">
-                                        <td className="py-3 px-4">
+                                        <td className="py-2 px-3">
                                             <span className="font-medium text-gray-900">{(quotation as any).customer_name || '-'}</span>
                                         </td>
-                                        <td className="py-3 px-4 text-sm text-gray-600">{quotation.quotation_number || quotation.quote_number}</td>
-                                        <td className="py-3 px-4 text-sm text-gray-600">{new Date(quotation.date).toLocaleDateString()}</td>
-                                        <td className="py-3 px-4 text-sm text-gray-600">{quotation.validity_date ? new Date(quotation.validity_date).toLocaleDateString() : '-'}</td>
-                                        <td className="py-3 px-4 font-medium text-gray-900">${(quotation.total_amount || quotation.total || 0).toFixed(2)}</td>
-                                        <td className="py-3 px-4">
+                                        <td className="py-2 px-3 text-sm text-gray-600">{quotation.quotation_number || quotation.quote_number}</td>
+                                        <td className="py-2 px-3 text-sm text-gray-600">{new Date(quotation.date).toLocaleDateString()}</td>
+                                        <td className="py-2 px-3 text-sm text-gray-600">{quotation.validity_date ? new Date(quotation.validity_date).toLocaleDateString() : '-'}</td>
+                                        <td className="py-2 px-3 font-medium text-gray-900">${(quotation.total_amount || quotation.total || 0).toFixed(2)}</td>
+                                        <td className="py-2 px-3">
                                             <Badge variant={
                                                 quotation.status === 'sent' ? 'info' :
                                                     quotation.status === 'accepted' ? 'success' :
@@ -176,7 +176,7 @@ export const Quotations = () => {
                                                 {quotation.status?.toUpperCase() || 'DRAFT'}
                                             </Badge>
                                         </td>
-                                        <td className="py-3 px-4 text-right">
+                                        <td className="py-2 px-3 text-right">
                                             <div className="flex justify-end gap-2">
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); navigate(`/quotations/${quotation.id}`); }}
@@ -205,6 +205,13 @@ export const Quotations = () => {
                                                     title="Delete"
                                                 >
                                                     <Trash2 className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); navigate(`/quotations/new?duplicate=${quotation.id}`); }}
+                                                    className="p-1 text-gray-400 hover:text-indigo-600 transition-colors"
+                                                    title="Duplicate Quotation"
+                                                >
+                                                    <Copy className="w-4 h-4" />
                                                 </button>
                                             </div>
                                         </td>
