@@ -1,4 +1,4 @@
-﻿import { forwardRef } from 'react';
+import { forwardRef } from 'react';
 import { PurchaseOrder, PurchaseOrderItem, Partner, Company } from '../types';
 
 interface PurchaseOrderTemplateProps {
@@ -20,9 +20,7 @@ export const PurchaseOrderTemplate = forwardRef<HTMLDivElement, PurchaseOrderTem
         const formatDate = (dateString: string | null) => {
             if (!dateString) return '-';
             return new Date(dateString).toLocaleDateString('en-GB', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
+                year: 'numeric', month: 'long', day: 'numeric',
             });
         };
 
@@ -33,19 +31,48 @@ export const PurchaseOrderTemplate = forwardRef<HTMLDivElement, PurchaseOrderTem
             return match ? match[1].trim() : '';
         };
 
-        // Parse doc address from notes
-        const getDocAddress = () => {
-            if (!po.notes) return '';
-            const match = po.notes.match(/DocAddress:\s*([^\n]+)/);
-            return match ? match[1].trim() : '';
+        // Parse PO terms
+        const getPoTerms = () => 'Refer to Payment Below';
+
+        // Use snapshot data if available, otherwise fall back to vendor master data
+        const vendorSnap = (po as any).vendor_snapshot;
+        const vendorDisplay = vendorSnap ? {
+            company_name: vendorSnap.company_name || vendor?.company_name || '',
+            address: vendorSnap.address || vendor?.address || '',
+            attn_name: vendorSnap.attn_name || vendor?.attn_name || '',
+            phone: vendorSnap.phone || vendor?.phone || '',
+            email: vendorSnap.email || vendor?.email || '',
+        } : {
+            company_name: vendor?.company_name || '',
+            address: vendor?.address || '',
+            attn_name: vendor?.attn_name || '',
+            phone: vendor?.phone || '',
+            email: vendor?.email || '',
         };
 
-        // Parse PO terms from notes or default
-        const getPoTerms = () => {
-            return 'Refer to Payment Below';
+        // Bill & Ship snapshot
+        const billShipSnap = (po as any).bill_ship_snapshot;
+        const billShipDisplay = billShipSnap ? {
+            bill_to: billShipSnap.bill_to || 'To: Finance',
+            bill_address: billShipSnap.bill_address || company?.address || '',
+        } : {
+            bill_to: 'To: Finance',
+            bill_address: company?.address || '60 Paya Lebar Road\n#08-45A Paya Lebar Square\nSingapore 409051',
         };
 
-        // Group items by group name (parsed from description "[GroupName] ...")
+        // Working Area snapshot
+        const workingAreaSnap = (po as any).working_area_snapshot;
+        const workingAreaDisplay = workingAreaSnap ? {
+            name: workingAreaSnap.name || '',
+            address: workingAreaSnap.address || '',
+            contact_person: workingAreaSnap.contact_person || '',
+            phone: workingAreaSnap.phone || '',
+        } : {
+            name: '', address: po.delivery_address || 'To follow instruction',
+            contact_person: '', phone: '',
+        };
+
+        // Group items by section subject (parsed from "[SectionSubject] description")
         const groupItems = (): GroupedItem[] => {
             const groupMap: Record<string, PurchaseOrderItem[]> = { 'Default': [] };
 
@@ -70,7 +97,6 @@ export const PurchaseOrderTemplate = forwardRef<HTMLDivElement, PurchaseOrderTem
                 }));
         };
 
-        // Clean description (remove group prefix)
         const cleanDescription = (desc: string) => {
             if (!desc) return '';
             return desc.replace(/^\[([^\]]+)\]\s*/, '');
@@ -82,7 +108,6 @@ export const PurchaseOrderTemplate = forwardRef<HTMLDivElement, PurchaseOrderTem
         const gst = po.tax || (subtotal * gstRate / 100);
         const total = po.total || (subtotal + gst);
         const subject = getSubject();
-        const docAddress = getDocAddress();
 
         return (
             <div ref={ref} className="p-8 bg-white text-black font-sans text-sm mx-auto" style={{ width: '210mm', minHeight: '297mm' }}>
@@ -102,7 +127,6 @@ export const PurchaseOrderTemplate = forwardRef<HTMLDivElement, PurchaseOrderTem
                             {company?.uen_number && <p className="mt-1">Co. UEN: {company.uen_number}</p>}
                         </div>
                     </div>
-
                     <div className="text-right">
                         <h1 className="text-3xl font-bold mb-3" style={{ color: '#00A86B' }}>PURCHASE ORDER</h1>
                         <table className="text-xs border-collapse ml-auto">
@@ -133,17 +157,17 @@ export const PurchaseOrderTemplate = forwardRef<HTMLDivElement, PurchaseOrderTem
                     <div>
                         <div className="bg-cyan-500 text-white font-bold px-2 py-1 text-center text-xs">VENDOR</div>
                         <div className="border border-gray-400 p-2 text-xs min-h-24">
-                            <p className="font-bold">{vendor.company_name}</p>
-                            <p className="whitespace-pre-line">{vendor.address}</p>
-                            {vendor.attn_name && <p>Attn: {vendor.attn_name}</p>}
-                            {vendor.phone && <p>Tel: {vendor.phone}</p>}
+                            <p className="font-bold">{vendorDisplay.company_name}</p>
+                            <p className="whitespace-pre-line">{vendorDisplay.address}</p>
+                            {vendorDisplay.attn_name && <p>Attn: {vendorDisplay.attn_name}</p>}
+                            {vendorDisplay.phone && <p>Tel: {vendorDisplay.phone}</p>}
+                            {vendorDisplay.email && <p>Email: {vendorDisplay.email}</p>}
                         </div>
                     </div>
-
                     <div>
                         <div className="bg-cyan-500 text-white font-bold px-2 py-1 text-center text-xs">SHIPPING INFO</div>
                         <div className="border border-gray-400 p-2 text-xs min-h-24 whitespace-pre-line">
-                            {po.shipping_info || 'Ship Via: FCA â€“ To Working Site.\nIncoterm: DAP'}
+                            {po.shipping_info || 'Ship Via: FCA \u2013 To Working Site.\nIncoterm: DAP'}
                         </div>
                     </div>
                 </div>
@@ -153,13 +177,17 @@ export const PurchaseOrderTemplate = forwardRef<HTMLDivElement, PurchaseOrderTem
                     <div>
                         <div className="bg-cyan-500 text-white font-bold px-2 py-1 text-center text-xs">BILL AND SHIP TO DOCUMENTATION ADDRESS</div>
                         <div className="border border-gray-400 p-2 text-xs min-h-28 whitespace-pre-line">
-                            {docAddress || `To: Finance\n${company?.address || '60 Paya Lebar Road\n#08-45A Paya Lebar Square\nSingapore 409051'}`}
+                            {billShipDisplay.bill_to}
+                            {'\n'}{billShipDisplay.bill_address}
                         </div>
                     </div>
                     <div>
                         <div className="bg-cyan-500 text-white font-bold px-2 py-1 text-center text-xs">WORKING SITE AND EQUIPMENT DELIVERY ADDRESS</div>
                         <div className="border border-gray-400 p-2 text-xs min-h-28 whitespace-pre-line">
-                            {po.delivery_address || 'To follow instruction'}
+                            {workingAreaDisplay.name && <p className="font-bold">{workingAreaDisplay.name}</p>}
+                            {workingAreaDisplay.address}
+                            {workingAreaDisplay.contact_person && <p>Contact: {workingAreaDisplay.contact_person}</p>}
+                            {workingAreaDisplay.phone && <p>Tel: {workingAreaDisplay.phone}</p>}
                         </div>
                     </div>
                 </div>
@@ -171,7 +199,7 @@ export const PurchaseOrderTemplate = forwardRef<HTMLDivElement, PurchaseOrderTem
                     </div>
                 )}
 
-                {/* Items Table */}
+                {/* Items Table with Subject Section Headers */}
                 <table className="w-full border-collapse border border-black mb-4 text-xs">
                     <thead>
                         <tr className="bg-cyan-500 text-white">
@@ -184,30 +212,75 @@ export const PurchaseOrderTemplate = forwardRef<HTMLDivElement, PurchaseOrderTem
                         </tr>
                     </thead>
                     <tbody>
-                        {groupedItems.map((group, gIdx) => (
-                            <>
-                                {/* Group Header */}
-                                {group.groupName !== 'Default' && (
-                                    <tr key={`header-${gIdx}`} className="bg-gray-100">
-                                        <td className="border border-black py-0.5 px-1 text-center font-bold">{String.fromCharCode(65 + gIdx)}</td>
-                                        <td colSpan={5} className="border border-black py-0.5 px-1 font-bold">{group.groupName}</td>
-                                    </tr>
-                                )}
-                                {/* Group Items */}
-                                {group.items.map((item, iIdx) => (
-                                    <tr key={item.id || `item-${gIdx}-${iIdx}`}>
-                                        <td className="border border-black py-0.5 px-1 text-center">
-                                            {group.groupName !== 'Default' ? iIdx + 1 : iIdx + 1}
-                                        </td>
-                                        <td className="border border-black py-0.5 px-1">{item.item_code}</td>
-                                        <td className="border border-black py-0.5 px-1">{cleanDescription(item.description || '')}</td>
-                                        <td className="border border-black py-0.5 px-1 text-center">{item.quantity}</td>
-                                        <td className="border border-black py-0.5 px-1 text-right">{(item.unit_price || 0).toFixed(2)}</td>
-                                        <td className="border border-black py-0.5 px-1 text-right">{(item.total || 0).toFixed(2)}</td>
-                                    </tr>
-                                ))}
-                            </>
-                        ))}
+                        {groupedItems.map((group, gIdx) => {
+                            // Sort items by item_code within each group
+                            const sortedItems = [...group.items].sort((a, b) => {
+                                if (a.item_code && !b.item_code) return -1;
+                                if (!a.item_code && b.item_code) return 1;
+                                return (a.item_code || '').localeCompare(b.item_code || '');
+                            });
+
+                            // Build item_code groups for rowSpan merging
+                            const codeGroups: { code: string; items: typeof sortedItems; startNo: number }[] = [];
+                            let currentNo = 1;
+                            let currentCode = '';
+                            let currentGroup: typeof sortedItems = [];
+
+                            sortedItems.forEach(item => {
+                                const code = item.item_code || '';
+                                if (code && code === currentCode) {
+                                    currentGroup.push(item);
+                                } else {
+                                    if (currentGroup.length > 0) {
+                                        codeGroups.push({ code: currentCode, items: currentGroup, startNo: currentNo });
+                                        currentNo++;
+                                    }
+                                    currentCode = code;
+                                    currentGroup = [item];
+                                }
+                            });
+                            if (currentGroup.length > 0) {
+                                codeGroups.push({ code: currentCode, items: currentGroup, startNo: currentNo });
+                            }
+
+                            return (
+                                <>
+                                    {/* Subject Section Header */}
+                                    {group.groupName !== 'Default' && (
+                                        <tr key={`header-${gIdx}`} className="bg-blue-50">
+                                            <td colSpan={6} className="border border-black py-1 px-2">
+                                                <span className="font-bold text-blue-800 italic">Subject: {group.groupName}</span>
+                                            </td>
+                                        </tr>
+                                    )}
+                                    {/* Render items with item_code merging */}
+                                    {codeGroups.map((cg, cgIdx) => (
+                                        cg.items.map((item, iIdx) => (
+                                            <tr key={item.id || `item-${gIdx}-${cgIdx}-${iIdx}`}>
+                                                {/* No + Item Code: merged for grouped items */}
+                                                {(cg.code && cg.items.length > 1) ? (
+                                                    iIdx === 0 ? (
+                                                        <>
+                                                            <td className="border border-black py-0.5 px-1 text-center" rowSpan={cg.items.length}>{cg.startNo}</td>
+                                                            <td className="border border-black py-0.5 px-1" rowSpan={cg.items.length}>{cg.code}</td>
+                                                        </>
+                                                    ) : null
+                                                ) : (
+                                                    <>
+                                                        <td className="border border-black py-0.5 px-1 text-center">{cg.startNo}</td>
+                                                        <td className="border border-black py-0.5 px-1">{item.item_code}</td>
+                                                    </>
+                                                )}
+                                                <td className="border border-black py-0.5 px-1 whitespace-pre-line">{cleanDescription(item.description || '')}</td>
+                                                <td className="border border-black py-0.5 px-1 text-center">{item.quantity}</td>
+                                                <td className="border border-black py-0.5 px-1 text-right">{(item.unit_price || 0).toFixed(2)}</td>
+                                                <td className="border border-black py-0.5 px-1 text-right">{(item.total || 0).toFixed(2)}</td>
+                                            </tr>
+                                        ))
+                                    ))}
+                                </>
+                            );
+                        })}
                     </tbody>
                 </table>
 
@@ -257,14 +330,11 @@ export const PurchaseOrderTemplate = forwardRef<HTMLDivElement, PurchaseOrderTem
                     </div>
                 </div>
 
-                {/* Terms and Conditions - Rendered as HTML */}
+                {/* Terms and Conditions */}
                 {termsContent ? (
                     <div className="mt-6 text-xs border-t pt-2">
                         <p className="font-bold mb-1">Terms & Conditions:</p>
-                        <div
-                            className="prose prose-sm max-w-none"
-                            dangerouslySetInnerHTML={{ __html: termsContent }}
-                        />
+                        <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: termsContent }} />
                     </div>
                 ) : (
                     <div className="mt-6 text-xs text-gray-600 border-t pt-2">

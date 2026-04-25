@@ -40,35 +40,25 @@ export const ViewDeliveryOrder = () => {
             // Fetch Items
             setItems(doRecord.items || []);
 
-            // Fetch Customer, Customer PO, and Quote Ref via SO -> Quotation
-            if (doRecord.so_id) {
+            // Fetch Customer, Customer PO, and Quote Ref via Quotation (SO removed)
+            if (doRecord.quotation_id) {
                 try {
-                    const so = await api.get<any>(`/sales-orders/${doRecord.so_id}`);
-                    if (so) {
-                        // Set Customer PO
-                        setCustomerPO(so.customer_po_number);
+                    const q = await api.get<any>(`/quotations/${doRecord.quotation_id}`);
+                    if (q) {
+                        // Set Customer PO from quotation
+                        setCustomerPO(q.customer_po_number);
+                        // Set Quote Ref
+                        setQuoteRef(q.quote_number);
 
-                        if (so.quotation_id) {
-                            const q = await api.get<any>(`/quotations/${so.quotation_id}`);
-                            if (q) {
-                                // Set Quote Ref
-                                setQuoteRef(q.quote_number);
-
-                                // Fetch Customer
-                                if (q.customer_id) {
-                                    const cust = await api.get<any>(`/partners/${q.customer_id}`);
-                                    if (cust) setCustomer(cust);
-                                }
-                            }
+                        // Fetch Customer
+                        if (q.customer_id) {
+                            const cust = await api.get<any>(`/partners/${q.customer_id}`);
+                            if (cust) setCustomer(cust);
                         }
                     }
                 } catch (e) {
-                    console.error('Error fetching SO related data', e);
+                    console.error('Error fetching Quotation related data', e);
                 }
-            } else {
-                // If created standalone? How to link customer?
-                // Ideally DO should have customer_id too if standalone.
-                // Assuming linked to SO for now.
             }
 
             // Fetch Company Info

@@ -64,10 +64,15 @@ export interface Quotation {
     total_amount: number;
     total?: number; // Legacy/DB compat
     gst_rate: number; // "NO GST" note
-    status: string;
+    status: string; // draft, confirmed
+    customer_po_number: string | null; // PO Number from customer
+    project_schedule_date: string | null; // Project schedule date
     customer?: Partner; // Helper for joins
     terms_content?: string; // HTML T&C content
     created_at?: string;
+    // Delivery progress helpers (from list query)
+    do_count?: number;
+    delivery_status?: string;
 }
 
 export interface QuotationItem {
@@ -80,13 +85,16 @@ export interface QuotationItem {
     disc_percent: number;
     disc_amount: number;
     total_price: number;
+    item_name: string | null; // Item name from items table
 }
 
+// SalesOrder and SalesOrderItem are deprecated - SO module has been removed
+// Keeping interfaces for backward compat only
 export interface SalesOrder {
     id: string;
     so_number: string | null;
     quotation_id: string | null;
-    customer_po_number: string | null; // "4504642120" (Dari Image 2/3/4)
+    customer_po_number: string | null;
     project_schedule_date: string | null;
     status: string;
 }
@@ -97,24 +105,25 @@ export interface SalesOrderItem {
     description: string | null;
     quantity: number;
     uom: string | null;
-    phase_name: string | null; // e.g. "01 Phase", "02 Phase"
-    qty_backordered: number;   // Quantity that needs procurement
-    qty_reserved: number;      // Quantity reserved from existing stock
+    phase_name: string | null;
+    qty_backordered: number;
+    qty_reserved: number;
 }
 
 export interface DeliveryOrder {
     id?: string;
     do_number: string | null;
-    so_id: string | null;
+    quotation_id: string | null; // Links directly to Quotation (SO removed)
+    so_id?: string | null; // Deprecated, kept for backward compat
     date: string | null;
-    subject?: string | null;  // Subject/description for DO
-    status?: string | null;   // pending, delivered, cancelled
+    subject?: string | null;
+    status?: string | null;
     terms: string | null;
     requestor_name: string | null;
     shipping_address_snapshot: string | null;
     customer_id?: string | null;
-    customer_po_number?: string | null;  // From Sales Order (for display)
-    quote_ref?: string | null;           // From Quotation (for display)
+    customer_po_number?: string | null;
+    quote_ref?: string | null;
     created_at?: string;
 }
 
@@ -132,21 +141,22 @@ export interface DeliveryOrderItem {
 export interface Invoice {
     id: string;
     invoice_number: string; // CNK-INV-35258030
-    so_id: string | null;
-    do_number_ref: string | null; // Referensi DO (Image 2) - LEGACY
+    quotation_id: string | null; // Links to Quotation (SO removed)
+    so_id?: string | null; // Deprecated
+    do_number_ref: string | null;
     date: string;
     due_date: string | null;
-    terms: string | null; // "60 Days"
-    subject: string | null; // "01- 50% Upon Project..."
+    terms: string | null;
+    subject: string | null;
     subtotal: number;
     discount: number;
-    tax: number; // Database column is 'tax', not 'tax_rate' or 'tax_amount'
+    tax: number;
     grand_total: number;
-    payment_status: string; // unpaid, partial, paid
-    billing_type?: string; // itemized, milestone, final
-    invoice_type?: string; // legacy, do_based
-    total_sections?: number; // Number of DO sections
-    customer?: Partner; // Helper for joins
+    payment_status: string;
+    billing_type?: string;
+    invoice_type?: string;
+    total_sections?: number;
+    customer?: Partner;
 }
 
 export interface InvoiceDeliverySection {
@@ -184,19 +194,20 @@ export interface InvoicePayment {
 export interface PurchaseOrder {
     id: string;
     po_number: string; // CNK-P25-30040
-    vendor_id: string | null; // Link ke Vendor
+    vendor_id: string | null;
+    quotation_id: string | null; // Links PO to source Quotation
     date: string | null;
-    quote_ref: string | null; // Ref Quote Vendor
-    shipping_info: string | null; // "Ship Via: FCA..."
-    delivery_address: string | null; // "Working Site Address"
+    quote_ref: string | null;
+    shipping_info: string | null;
+    delivery_address: string | null;
     notes?: string | null;
     status: string;
-    subtotal: number;  // Subtotal before tax
-    tax: number;       // GST amount
+    subtotal: number;
+    tax: number;
     total: number;
-    vendor_name?: string; // Helper for display
+    vendor_name?: string;
     vendor?: Partner;
-    terms_content?: string; // HTML T&C content
+    terms_content?: string;
     created_at?: string;
 }
 

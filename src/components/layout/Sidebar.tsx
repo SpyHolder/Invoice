@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, FileText, FileCheck, ShoppingCart, Package, Users, Building2, ScrollText, ChevronDown, ChevronUp, Database } from 'lucide-react';
+import { LayoutDashboard, FileText, FileCheck, ShoppingCart, Package, Users, Building2, ScrollText, ChevronDown, ChevronUp, Database, MapPin } from 'lucide-react';
 
 export const Sidebar = () => {
     const location = useLocation();
     const [dataMasterOpen, setDataMasterOpen] = useState(() => {
         // Auto-expand if current path is in data master
-        const dataMasterPaths = ['/items', '/customers', '/vendors', '/terms'];
+        const dataMasterPaths = ['/items', '/customers', '/vendors', '/terms', '/working-areas'];
         return dataMasterPaths.some(path => location.pathname === path);
     });
 
@@ -14,7 +14,7 @@ export const Sidebar = () => {
         { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
         { to: '/invoices', icon: FileText, label: 'Invoices' },
         { to: '/quotations', icon: FileCheck, label: 'Quotations' },
-        { to: '/sales-orders', icon: FileText, label: 'Sales Orders' },
+
         { to: '/delivery-orders', icon: Package, label: 'Delivery Orders' },
         { to: '/purchase-orders', icon: ShoppingCart, label: 'Purchase Orders' },
     ];
@@ -24,6 +24,7 @@ export const Sidebar = () => {
         { to: '/customers', icon: Users, label: 'Customers' },
         { to: '/vendors', icon: Building2, label: 'Vendors' },
         { to: '/terms', icon: ScrollText, label: 'Terms & Conditions' },
+        { to: '/working-areas', icon: MapPin, label: 'Working Areas' },
     ];
 
     const isDataMasterActive = dataMasterItems.some(item => location.pathname === item.to);

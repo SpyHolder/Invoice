@@ -41,7 +41,7 @@ export const ViewInvoice = () => {
             if (!invoiceData) throw new Error('Invoice not found');
             setInvoice(invoiceData);
 
-            // Fetch customer (partner) via customer_id derived from SO -> Quotation
+            // Fetch customer (partner) via customer_id
             if (invoiceData.customer_id) {
                 const customerData = await api.get<any>(`/partners/${invoiceData.customer_id}`);
                 setCustomer(customerData);
@@ -75,15 +75,15 @@ export const ViewInvoice = () => {
                 }
             }
 
-            // Fetch Customer PO from Sales Order
-            if (invoiceData.so_id) {
+            // Fetch Customer PO from Quotation (SO removed)
+            if (invoiceData.quotation_id) {
                 try {
-                    const soData = await api.get<any>(`/sales-orders/${invoiceData.so_id}`);
-                    if (soData) {
-                        setCustomerPO(soData.customer_po_number);
+                    const quotationData = await api.get<any>(`/quotations/${invoiceData.quotation_id}`);
+                    if (quotationData) {
+                        setCustomerPO(quotationData.customer_po_number);
                     }
                 } catch (e) {
-                    console.error('Error fetching SO details', e);
+                    console.error('Error fetching Quotation details', e);
                 }
             }
 

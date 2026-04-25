@@ -123,7 +123,7 @@ export const DeliveryOrders = () => {
                             <thead>
                                 <tr className="border-b border-gray-200 bg-gray-50/50">
                                     <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">DO Number</th>
-                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">SO Ref</th>
+                                    <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Quote Ref</th>
                                     <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Customer</th>
                                     <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Date</th>
                                     <th className="text-left py-2 px-3 text-sm font-medium text-gray-500">Subject</th>
@@ -142,7 +142,7 @@ export const DeliveryOrders = () => {
                                     orders.map((doRecord) => (
                                         <tr key={doRecord.id} className="hover:bg-gray-50/50 transition-colors">
                                             <td className="py-2 px-3 text-sm font-medium text-gray-900">{doRecord.do_number}</td>
-                                            <td className="py-2 px-3 text-sm text-gray-600">{doRecord.so_number || '-'}</td>
+                                            <td className="py-2 px-3 text-sm text-gray-600">{doRecord.quote_number || doRecord.quotation_number || '-'}</td>
                                             <td className="py-2 px-3 text-sm text-gray-600">
                                                 {doRecord.customer_name || '-'}
                                             </td>
@@ -184,7 +184,7 @@ export const DeliveryOrders = () => {
                                                         <Edit className="w-4 h-4" />
                                                     </button>
                                                     <button
-                                                        onClick={(e) => { e.stopPropagation(); navigate(`/invoices/new?so_id=${doRecord.so_id}`); }}
+                                                        onClick={(e) => { e.stopPropagation(); navigate(`/invoices/new?so_id=${doRecord.quotation_id}`); }}
                                                         className="p-1 text-gray-400 hover:text-green-600 transition-colors"
                                                         title="Create Invoice"
                                                     >

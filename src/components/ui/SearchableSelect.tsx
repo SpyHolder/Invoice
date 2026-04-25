@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, ChevronDown } from 'lucide-react';
 
 interface Option {
@@ -25,19 +26,39 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const wrapperRef = useRef<HTMLDivElement>(null);
+    const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 0 });
+    const triggerRef = useRef<HTMLButtonElement>(null);
+    const dropdownRef = useRef<HTMLDivElement>(null);
 
+    // Calculate dropdown position
+    const updatePosition = useCallback(() => {
+        if (triggerRef.current) {
+            const rect = triggerRef.current.getBoundingClientRect();
+            setDropdownPos({
+                top: rect.bottom + 4,
+                left: rect.left,
+                width: rect.width,
+            });
+        }
+    }, []);
+
+    // Close on outside click
     useEffect(() => {
+        if (!isOpen) return;
         function handleClickOutside(event: MouseEvent) {
-            if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+            const target = event.target as Node;
+            if (
+                triggerRef.current && !triggerRef.current.contains(target) &&
+                dropdownRef.current && !dropdownRef.current.contains(target)
+            ) {
                 setIsOpen(false);
             }
         }
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
+    }, [isOpen]);
 
-    // Also close on Escape key
+    // Close on Escape key
     useEffect(() => {
         function handleKeyDown(event: KeyboardEvent) {
             if (event.key === 'Escape' && isOpen) {
@@ -48,6 +69,18 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [isOpen]);
 
+    // Reposition on scroll/resize while open
+    useEffect(() => {
+        if (!isOpen) return;
+        updatePosition();
+        window.addEventListener('scroll', updatePosition, true);
+        window.addEventListener('resize', updatePosition);
+        return () => {
+            window.removeEventListener('scroll', updatePosition, true);
+            window.removeEventListener('resize', updatePosition);
+        };
+    }, [isOpen, updatePosition]);
+
     const filteredOptions = options.filter(opt => 
         opt.label.toLowerCase().includes(searchQuery.toLowerCase())
     );
@@ -55,14 +88,18 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     const selectedOption = options.find(opt => opt.value == value); // use loose equality if value is number wrapped in string sometimes
 
     return (
-        <div ref={wrapperRef} className={`relative ${className}`}>
+        <div className={`relative ${className}`}>
             <button
+                ref={triggerRef}
                 type="button"
                 className={`w-full flex items-center justify-between text-left px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${disabled ? 'bg-gray-100 cursor-not-allowed text-gray-500' : 'cursor-pointer hover:border-blue-400'}`}
                 onClick={() => {
                     if (!disabled) {
+                        if (!isOpen) {
+                            setSearchQuery('');
+                            updatePosition();
+                        }
                         setIsOpen(!isOpen);
-                        if (!isOpen) setSearchQuery(''); // reset search when opening
                     }
                 }}
                 title={selectedOption ? selectedOption.label : placeholder}
@@ -73,8 +110,17 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                 <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
             </button>
 
-            {isOpen && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden" style={{ minWidth: '100%' }}>
+            {isOpen && createPortal(
+                <div
+                    ref={dropdownRef}
+                    className="fixed bg-white border border-gray-200 rounded-lg shadow-xl"
+                    style={{
+                        top: dropdownPos.top,
+                        left: dropdownPos.left,
+                        width: Math.max(dropdownPos.width, 200),
+                        zIndex: 99999,
+                    }}
+                >
                     <div className="p-2 border-b border-gray-100 bg-gray-50/80">
                         <div className="relative">
                             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -109,7 +155,8 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                             </li>
                         )}
                     </ul>
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );

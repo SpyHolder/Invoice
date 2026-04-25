@@ -28,13 +28,13 @@ export const DeliveryOrderForm = () => {
     const [isEditMode, setIsEditMode] = useState(false);
 
     // Data sources
-    const [salesOrders, setSalesOrders] = useState<any[]>([]);
+    const [quotations, setQuotations] = useState<any[]>([]);
     const [availablePhases, setAvailablePhases] = useState<string[]>([]);
     const [selectedPhases, setSelectedPhases] = useState<string[]>([]);
     const [availableItems, setAvailableItems] = useState<SalesOrderItem[]>([]);
 
     const [formData, setFormData] = useState({
-        so_id: '',
+        quotation_id: '',
         do_number: '',
         date: new Date().toISOString().split('T')[0],
         subject: '',
@@ -144,11 +144,8 @@ export const DeliveryOrderForm = () => {
             const soItem = availableSOItems[idx];
             if (!soItem) return;
             
-            const remaining = soItem.quantity - (
-                newGroups.reduce((acc, g) => acc + g.items.filter(i => i.description === soItem.description).reduce((sum, item) => sum + item.quantity, 0), 0) +
-                newUngrouped.filter(i => i.description === soItem.description).reduce((sum, item) => sum + item.quantity, 0)
-            ) - getTotalAssignedQty(soItem.description || ''); // We need robust checking, actually let's use getRemainingQty
-            // Wait, getRemainingQty queries current state, we need it to use current state but since we process separately, total assigned quantity changes.
+            
+            // Use getRemainingQty for robust remaining quantity checking
             const currentRemaining = getRemainingQty(soItem);
             
             const qtyKey = `so-${idx}`;
@@ -186,62 +183,71 @@ export const DeliveryOrderForm = () => {
     };
 
     useEffect(() => {
-        fetchSalesOrders();
+        fetchQuotations();
         const searchParams = new URLSearchParams(window.location.search);
-        const soIdParam = searchParams.get('so_id');
+        const quotationIdParam = searchParams.get('quotation_id');
         const duplicateId = searchParams.get('duplicate');
         if (id) {
             setIsEditMode(true);
             loadDeliveryOrder(id);
         } else if (duplicateId) {
             loadDeliveryOrder(duplicateId, true);
-        } else if (soIdParam) {
-            handleSOSelection(soIdParam);
+        } else if (quotationIdParam) {
+            handleQuotationSelection(quotationIdParam);
         }
     }, [id]);
 
-    const fetchSalesOrders = async () => {
-        const data = await api.get<any[]>('/sales-orders');
+    const fetchQuotations = async () => {
+        const data = await api.get<any[]>('/quotations');
         if (data) {
-            setSalesOrders(data.filter(so => so.status === 'confirmed'));
+            // Only show confirmed quotations (those with PO number)
+            setQuotations(data.filter(q => q.status === 'confirmed'));
         }
     };
 
-    const handleSOSelection = async (soId: string) => {
-        setFormData(prev => ({ ...prev, so_id: soId }));
+    const handleQuotationSelection = async (quotationId: string) => {
+        setFormData(prev => ({ ...prev, quotation_id: quotationId }));
 
         try {
-            const so = await api.get<any>(`/sales-orders/${soId}`);
-            const items = so?.items;
+            const quotation = await api.get<any>(`/quotations/${quotationId}`);
+            const items = quotation?.items;
 
             if (items) {
-                await loadAvailableSOItems(soId, items, id);
+                // Map quotation items to SalesOrderItem-like structure for compatibility
+                const mappedItems = items.map((item: any) => ({
+                    id: item.id,
+                    so_id: '',
+                    description: item.item_description,
+                    quantity: item.quantity,
+                    uom: item.uom,
+                    phase_name: item.item_name,
+                    qty_backordered: 0,
+                    qty_reserved: 0,
+                }));
+                await loadAvailableQuotationItems(quotationId, mappedItems, id);
             }
 
             // Fetch Customer shipping address
-            if (so?.quotation_id) {
-                const q = await api.get<any>(`/quotations/${so.quotation_id}`);
-                const partnerId = q?.customer_id;
-                if (partnerId) {
-                    const partners = await api.get<any[]>(`/partners`);
-                    const partner = partners?.find(p => p.id === partnerId);
-                    if (partner) {
-                        setFormData(prev => ({
-                            ...prev,
-                            shipping_address_snapshot: partner.shipping_address || partner.address || ''
-                        }));
-                    }
+            const partnerId = quotation?.customer_id;
+            if (partnerId) {
+                const partners = await api.get<any[]>(`/partners`);
+                const partner = partners?.find(p => p.id === partnerId);
+                if (partner) {
+                    setFormData(prev => ({
+                        ...prev,
+                        shipping_address_snapshot: partner.shipping_address || partner.address || ''
+                    }));
                 }
             }
         } catch (error) {
-            console.error('Error handling SO selection:', error);
-            showToast('Failed to load Sales Order details', 'error');
+            console.error('Error handling Quotation selection:', error);
+            showToast('Failed to load Quotation details', 'error');
         }
     };
 
-    const loadAvailableSOItems = async (soId: string, items: any[], excludeDoId?: string) => {
+    const loadAvailableQuotationItems = async (quotationId: string, items: any[], excludeDoId?: string) => {
         const allDOs = await api.get<any[]>('/delivery-orders');
-        let existingDOs = allDOs?.filter(d => d.so_id === soId) || [];
+        let existingDOs = allDOs?.filter(d => d.quotation_id === quotationId) || [];
         if (excludeDoId) existingDOs = existingDOs.filter(d => d.id !== excludeDoId);
 
         if (existingDOs.length > 0) {
@@ -274,7 +280,7 @@ export const DeliveryOrderForm = () => {
             setAvailableItems(items);
         }
 
-        const uniquePhases = Array.from(new Set(items.map((i: any) => i.phase_name).filter(Boolean) as string[]));
+        const uniquePhases = Array.from(new Set(items.map((i: any) => i.item_name).filter(Boolean) as string[]));
         setAvailablePhases(uniquePhases);
     };
 
@@ -285,7 +291,7 @@ export const DeliveryOrderForm = () => {
             if (!data) throw new Error('Not found');
 
             setFormData({
-                so_id: isDuplicate ? '' : (data.so_id || ''),
+                quotation_id: isDuplicate ? '' : (data.quotation_id || ''),
                 do_number: isDuplicate ? '' : data.do_number,
                 date: isDuplicate ? new Date().toISOString().split('T')[0] : (data.date ? new Date(data.date).toISOString().split('T')[0] : ''),
                 subject: data.subject || '',
@@ -295,14 +301,24 @@ export const DeliveryOrderForm = () => {
                 customer_id: '',
             });
 
-            if (data.so_id) {
+            if (data.quotation_id) {
                 try {
-                    const so = await api.get<any>(`/sales-orders/${data.so_id}`);
-                    if (so?.items) {
-                        await loadAvailableSOItems(data.so_id, so.items, isDuplicate ? undefined : doId);
+                    const quotation = await api.get<any>(`/quotations/${data.quotation_id}`);
+                    if (quotation?.items) {
+                        const mappedItems = quotation.items.map((item: any) => ({
+                            id: item.id,
+                            so_id: '',
+                            description: item.item_description,
+                            quantity: item.quantity,
+                            uom: item.uom,
+                            phase_name: item.item_name,
+                            qty_backordered: 0,
+                            qty_reserved: 0,
+                        }));
+                        await loadAvailableQuotationItems(data.quotation_id, mappedItems, isDuplicate ? undefined : doId);
                     }
                 } catch (e) {
-                    console.error("Failed to load available SO items", e);
+                    console.error("Failed to load available Quotation items", e);
                 }
             }
 
@@ -461,7 +477,7 @@ export const DeliveryOrderForm = () => {
         setLoading(true);
         try {
             const doData = {
-                so_id: formData.so_id || null,
+                quotation_id: formData.quotation_id || null,
                 date: formData.date,
                 subject: formData.subject,
                 terms: formData.terms,
@@ -508,38 +524,38 @@ export const DeliveryOrderForm = () => {
                     </Button>
                     <div>
                         <h1 className="text-3xl font-bold text-gray-900">{isEditMode ? 'Edit' : 'Create'} Delivery Order</h1>
-                        {formData.so_id && <p className="text-sm text-gray-500 mt-1">Linked to SO</p>}
+                        {formData.quotation_id && <p className="text-sm text-gray-500 mt-1">Linked to Quotation</p>}
                     </div>
                 </div>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Section 1: Sales Order Source */}
+                {/* Section 1: Quotation Source */}
                 <Card>
                     <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
                         <span className="w-1 h-6 bg-blue-600 rounded-full"></span>
-                        Source Sales Order
+                        Source Quotation
                     </h2>
 
                     <div className="space-y-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Select Sales Order <span className="text-red-500">*</span>
+                                Select Quotation <span className="text-red-500">*</span>
                             </label>
                             <div className="relative">
                                 <SearchableSelect
-                                    value={formData.so_id || ''}
-                                    onChange={(val) => handleSOSelection(val)}
-                                    options={salesOrders.map(so => ({ label: `${so.so_number} (PO: ${so.customer_po_number || 'N/A'})`, value: so.id }))}
-                                    placeholder="Select Sales Order..."
+                                    value={formData.quotation_id || ''}
+                                    onChange={(val) => handleQuotationSelection(val)}
+                                    options={quotations.map(q => ({ label: `${q.quotation_number || q.quote_number} (PO: ${q.customer_po_number || 'N/A'})`, value: q.id }))}
+                                    placeholder="Select Quotation..."
                                     className="w-full"
                                     disabled={isEditMode}
                                 />
                             </div>
                         </div>
 
-                        {/* Phase Selection - only show when SO selected and phases exist */}
-                        {formData.so_id && availablePhases.length > 0 && (
+                        {/* Phase Selection - only show when Quotation selected and phases exist */}
+                        {formData.quotation_id && availablePhases.length > 0 && (
                             <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
                                 <label className="block text-sm font-medium text-blue-900 mb-3">
                                     Quick Import by Phase (Optional)
@@ -635,12 +651,12 @@ export const DeliveryOrderForm = () => {
                     </div>
                 </Card>
 
-                {/* Section 3: Item Selection from SO */}
-                {formData.so_id && getAvailableSOItems().length > 0 && (
+                {/* Section 3: Item Selection from Quotation */}
+                {formData.quotation_id && getAvailableSOItems().length > 0 && (
                     <Card>
                         <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
                             <span className="w-1 h-6 bg-blue-600 rounded-full"></span>
-                            Available Items from SO
+                            Available Items from Quotation
                             <span className="ml-auto text-sm font-normal text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
                                 {getAvailableSOItems().length} items available
                             </span>

@@ -39,11 +39,11 @@ export const InvoiceForm = () => {
 
     // Data sources
     const [customers, setCustomers] = useState<Partner[]>([]);
-    const [salesOrders, setSalesOrders] = useState<any[]>([]); // SOs specific to customer
+    const [quotations, setQuotations] = useState<any[]>([]); // Quotations specific to customer
 
     const [formData, setFormData] = useState({
         customer_id: '',
-        so_id: '',
+        quotation_id: '',
         invoice_number: '',
         date: new Date().toISOString().split('T')[0],
         due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -117,7 +117,7 @@ export const InvoiceForm = () => {
         } else if (doIdParam) {
             handleDOSelection(doIdParam);
         } else if (soIdParam) {
-            handleSOSelectionForInvoice(soIdParam);
+            handleQuotationSelectionForInvoice(soIdParam);
         }
     }, [id, searchParams]);
 
@@ -126,45 +126,41 @@ export const InvoiceForm = () => {
         if (data) setCustomers(data);
     };
 
-    const fetchSalesOrders = async (customerId: string) => {
+    const fetchQuotations = async (customerId: string) => {
         if (!customerId) {
-            setSalesOrders([]);
+            setQuotations([]);
             return;
         }
 
-        const data = await api.get<any[]>('/sales-orders');
+        const data = await api.get<any[]>('/quotations');
         if (data) {
-            const filteredSO = data.filter(so => so.status === 'confirmed' && so.quotations?.customer_id === customerId);
-            setSalesOrders(filteredSO);
+            const filteredQ = data.filter(q => q.status === 'confirmed' && q.customer_id === customerId);
+            setQuotations(filteredQ);
         }
     };
 
     const handleCustomerChange = async (custId: string) => {
-        setFormData(prev => ({ ...prev, customer_id: custId, so_id: '' }));
-        await fetchSalesOrders(custId);
+        setFormData(prev => ({ ...prev, customer_id: custId, quotation_id: '' }));
+        await fetchQuotations(custId);
     };
 
-    // Handle when creating invoice directly from SO (combine all DOs)
-    const handleSOSelectionForInvoice = async (soId: string) => {
-        setFormData(prev => ({ ...prev, so_id: soId }));
+    // Handle when creating invoice directly from Quotation (combine all DOs)
+    const handleQuotationSelectionForInvoice = async (quotationId: string) => {
+        setFormData(prev => ({ ...prev, quotation_id: quotationId }));
 
-        // Fetch customer from SO → Quotation
-        const so = await api.get<any>(`/sales-orders/${soId}`);
+        // Fetch customer from Quotation
+        const quotation = await api.get<any>(`/quotations/${quotationId}`);
 
-        if (so && so.quotation_id) {
-            const quotation = await api.get<any>(`/quotations/${so.quotation_id}`);
-
-            if (quotation) {
-                setFormData(prev => ({ ...prev, customer_id: quotation.customer_id, so_id: soId }));
-            }
+        if (quotation) {
+            setFormData(prev => ({ ...prev, customer_id: quotation.customer_id, quotation_id: quotationId }));
         }
 
-        // Fetch all DOs from this SO
+        // Fetch all DOs from this Quotation
         const allDOs = await api.get<any[]>('/delivery-orders');
-        const dos = allDOs?.filter(d => d.so_id === soId) || [];
+        const dos = allDOs?.filter(d => d.quotation_id === quotationId) || [];
 
         if (!dos || dos.length === 0) {
-            showToast('No delivery orders found for this SO', 'warning');
+            showToast('No delivery orders found for this Quotation', 'warning');
             return;
         }
 
@@ -208,29 +204,28 @@ export const InvoiceForm = () => {
         }
     };
 
-    const handleSOSelection = async (soId: string) => {
-        // Load SO details
-        const so = await api.get<any>(`/sales-orders/${soId}`);
-        if (so) {
+    const handleQuotationSelection = async (quotationId: string) => {
+        // Load Quotation details
+        const quotation = await api.get<any>(`/quotations/${quotationId}`);
+        if (quotation) {
             setFormData(prev => ({
                 ...prev,
-                so_id: so.id,
-                customer_id: so.quotations?.customer_id || prev.customer_id,
-                subject: so.quotations?.subject || prev.subject
+                quotation_id: quotation.id,
+                customer_id: quotation.customer_id || prev.customer_id,
+                subject: quotation.subject || prev.subject
             }));
 
-            // If Standard mode, maybe pull items?
+            // If Standard mode, import items from quotation
             if (formData.pricing_mode === 'standard') {
-                importItemsFromSO(soId);
+                importItemsFromQuotation(quotationId);
             }
         }
     };
 
-    const importItemsFromSO = async (soId: string) => {
-        const so = await api.get<any>(`/sales-orders/${soId}`);
-        const items = so?.items;
+    const importItemsFromQuotation = async (quotationId: string) => {
+        const quotation = await api.get<any>(`/quotations/${quotationId}`);
+        const items = quotation?.items;
         if (items && items.length > 0) {
-            // Lookup prices from items master data
             const masterItems = await api.get<any[]>('/items');
 
             const priceMap = new Map();
@@ -242,14 +237,14 @@ export const InvoiceForm = () => {
             }
 
             setLineItems(items.map((i: any, idx: number) => ({
-                id: `so-${idx}`,
+                id: `q-${idx}`,
                 item_code: '',
                 item_id: '',
-                description: i.description || '',
+                description: i.item_description || '',
                 quantity: i.quantity,
                 uom: i.uom || 'EA',
-                unit_price: priceMap.get(i.description) || priceMap.get(i.item_code) || 0, // Auto-lookup from items table
-                total_price: (priceMap.get(i.description) || priceMap.get(i.item_code) || 0) * i.quantity
+                unit_price: i.unit_price || priceMap.get(i.item_description) || 0,
+                total_price: (i.unit_price || priceMap.get(i.item_description) || 0) * i.quantity
             })));
         }
     };
@@ -265,18 +260,15 @@ export const InvoiceForm = () => {
         if (doData) {
             setFormData(prev => ({
                 ...prev,
-                so_id: doData.so_id || '',
+                quotation_id: doData.quotation_id || '',
                 subject: doData.subject || prev.subject,
             }));
 
-            // Get customer from SO if available
-            if (doData.so_id) {
-                const so = await api.get<any>(`/sales-orders/${doData.so_id}`);
-                if (so && so.quotation_id) {
-                    const q = await api.get<any>(`/quotations/${so.quotation_id}`);
-                    if (q) {
-                        setFormData(prev => ({ ...prev, customer_id: q.customer_id }));
-                    }
+            // Get customer from Quotation if available
+            if (doData.quotation_id) {
+                const q = await api.get<any>(`/quotations/${doData.quotation_id}`);
+                if (q) {
+                    setFormData(prev => ({ ...prev, customer_id: q.customer_id }));
                 }
             }
         }
@@ -316,7 +308,7 @@ export const InvoiceForm = () => {
 
             setFormData({
                 customer_id: inv.customer_id,
-                so_id: isDuplicate ? '' : (inv.so_id || ''),
+                quotation_id: isDuplicate ? '' : (inv.quotation_id || ''),
                 invoice_number: isDuplicate ? '' : inv.invoice_number,
                 date: isDuplicate ? new Date().toISOString().split('T')[0] : inv.date,
                 due_date: isDuplicate ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] : inv.due_date,
@@ -347,8 +339,8 @@ export const InvoiceForm = () => {
                 })));
             }
 
-            // Fetch SOs for customer
-            if (inv.customer_id) fetchSalesOrders(inv.customer_id);
+            // Fetch quotations for customer
+            if (inv.customer_id) fetchQuotations(inv.customer_id);
 
         } catch (error) {
             console.error(error);
@@ -404,7 +396,7 @@ export const InvoiceForm = () => {
             // Header
             const invData = {
                 customer_id: formData.customer_id,
-                so_id: formData.so_id || null,
+                quotation_id: formData.quotation_id || null,
                 // Map pricing_mode to billing_type: 'standard' → 'itemized', 'milestone' → 'milestone'
                 billing_type: formData.pricing_mode === 'standard' ? 'itemized' : 'milestone',
                 invoice_number: formData.invoice_number || `INV-${Date.now()}`,
@@ -481,15 +473,15 @@ export const InvoiceForm = () => {
                             </div>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Linked Sales Order (Optional)</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Linked Quotation (Optional)</label>
                             <div className="relative">
                                 <SearchableSelect
-                                    value={formData.so_id || ''}
-                                    onChange={(val) => handleSOSelection(val)}
-                                    options={salesOrders.map(so => ({ label: `${so.so_number} - ${so.quotations?.subject}`, value: so.id }))}
-                                    placeholder="Select SO..."
+                                    value={formData.quotation_id || ''}
+                                    onChange={(val) => handleQuotationSelection(val)}
+                                    options={quotations.map(q => ({ label: `${q.quote_number} - ${q.subject || ''}`, value: q.id }))}
+                                    placeholder="Select Quotation..."
                                     className="w-full"
-                                    disabled={loading}
+                                    disabled={loading || !formData.customer_id}
                                 />
                             </div>
                         </div>

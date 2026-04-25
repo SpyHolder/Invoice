@@ -16,13 +16,13 @@ export const InvoiceFormNew = () => {
 
     // Data sources
     const [customers, setCustomers] = useState<Partner[]>([]);
-    const [salesOrders, setSalesOrders] = useState<any[]>([]);
+    const [quotations, setQuotations] = useState<any[]>([]);
     const [deliveryOrders, setDeliveryOrders] = useState<DeliveryOrder[]>([]);
     const [selectedDOs, setSelectedDOs] = useState<string[]>([]);
 
     const [formData, setFormData] = useState({
         customer_id: '',
-        so_id: '',
+        quotation_id: '',
         invoice_number: '',
         date: new Date().toISOString().split('T')[0],
         due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -106,15 +106,15 @@ export const InvoiceFormNew = () => {
     // FIX 2: fetchDeliveryOrders filters for delivered DOs only
     // and excludes already-invoiced DOs to prevent double billing.
     // ---------------------------------------------------------------
-    const fetchDeliveryOrders = useCallback(async (soId: string, autoSelect = false) => {
-        if (!soId) {
+    const fetchDeliveryOrders = useCallback(async (quotationId: string, autoSelect = false) => {
+        if (!quotationId) {
             setDeliveryOrders([]);
             return;
         }
 
         // Fetch only delivered DOs
         const data = await api.get<DeliveryOrder[]>('/delivery-orders');
-        const deliveredDOs = data ? data.filter(d => d.so_id === soId && d.status === 'delivered') : [];
+        const deliveredDOs = data ? data.filter(d => d.quotation_id === quotationId && d.status === 'delivered') : [];
 
         if (deliveredDOs.length > 0) {
             // Get already-invoiced DO IDs to exclude (prevent double billing)
@@ -139,17 +139,17 @@ export const InvoiceFormNew = () => {
         if (data) setCustomers(data);
     }, []);
 
-    const fetchSalesOrders = useCallback(async (customerId: string) => {
+    const fetchQuotations = useCallback(async (customerId: string) => {
         if (!customerId) {
-            setSalesOrders([]);
+            setQuotations([]);
             return;
         }
 
-        const data = await api.get<any[]>('/sales-orders');
+        const data = await api.get<any[]>('/quotations');
         if (data) {
-            // Filter by customer_id and status
-            const filteredSO = data.filter(so => so.status === 'confirmed' && so.customer_id === customerId);
-            setSalesOrders(filteredSO);
+            // Filter by customer_id and confirmed status
+            const filteredQ = data.filter(q => q.status === 'confirmed' && q.customer_id === customerId);
+            setQuotations(filteredQ);
         }
     }, []);
 
@@ -157,28 +157,25 @@ export const InvoiceFormNew = () => {
     // FIX 6: Hapus `quotation_id` yang tidak dipakai dari select.
     // Tambahkan null-check pada `so.quotations`.
     // ---------------------------------------------------------------
-    const handleSOSelection = useCallback(async (soId: string) => {
-        setFormData(prev => ({ ...prev, so_id: soId }));
+    const handleQuotationSelection = useCallback(async (quotationId: string) => {
+        setFormData(prev => ({ ...prev, quotation_id: quotationId }));
 
-        // Fetch customer from SO
-        const so = await api.get<any>(`/sales-orders/${soId}`);
+        // Fetch customer from Quotation
+        const quotation = await api.get<any>(`/quotations/${quotationId}`);
 
-        if (so && so.quotation_id) {
-            const quotation = await api.get<any>(`/quotations/${so.quotation_id}`);
-            if (quotation) {
-                setFormData(prev => ({
-                    ...prev,
-                    customer_id: quotation.customer_id,
-                    subject: quotation.subject || ''
-                }));
-                await fetchSalesOrders(quotation.customer_id);
-            }
+        if (quotation) {
+            setFormData(prev => ({
+                ...prev,
+                customer_id: quotation.customer_id,
+                subject: quotation.subject || ''
+            }));
+            await fetchQuotations(quotation.customer_id);
         }
 
         // Auto-select semua DO ketika datang dari URL param
-        const isFromParam = !!soId && window.location.search.includes('so_id');
-        await fetchDeliveryOrders(soId, isFromParam);
-    }, [fetchSalesOrders, fetchDeliveryOrders]);
+        const isFromParam = !!quotationId && window.location.search.includes('so_id');
+        await fetchDeliveryOrders(quotationId, isFromParam);
+    }, [fetchQuotations, fetchDeliveryOrders]);
 
     // ---------------------------------------------------------------
     // FIX 1: useEffect dependency array lengkap. `handleSOSelection`
@@ -189,16 +186,16 @@ export const InvoiceFormNew = () => {
         const soIdParam = searchParams.get('so_id');
 
         if (soIdParam) {
-            handleSOSelection(soIdParam);
+            handleQuotationSelection(soIdParam);
         }
-    }, [searchParams, fetchCustomers, handleSOSelection]);
+    }, [searchParams, fetchCustomers, handleQuotationSelection]);
 
     const handleCustomerChange = async (custId: string) => {
-        setFormData(prev => ({ ...prev, customer_id: custId, so_id: '' }));
+        setFormData(prev => ({ ...prev, customer_id: custId, quotation_id: '' }));
         setSelectedDOs([]);
         setDeliveryOrders([]);
         setPreviewItems([]);
-        await fetchSalesOrders(custId);
+        await fetchQuotations(custId);
     };
 
     const handleDOToggle = async (doId: string) => {
@@ -276,7 +273,7 @@ export const InvoiceFormNew = () => {
             const invoiceData = {
                 invoice_number: invoiceNumber,
                 customer_id: formData.customer_id,
-                so_id: formData.so_id,
+                quotation_id: formData.quotation_id,
                 date: formData.date,
                 due_date: formData.due_date,
                 terms: formData.terms,
@@ -352,18 +349,18 @@ export const InvoiceFormNew = () => {
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium mb-2">Sales Order *</label>
+                            <label className="block text-sm font-medium mb-2">Quotation *</label>
                             <select
                                 className="w-full border border-gray-300 rounded-lg p-3 bg-white text-black focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                                value={formData.so_id}
-                                onChange={(e) => handleSOSelection(e.target.value)}
+                                value={formData.quotation_id}
+                                onChange={(e) => handleQuotationSelection(e.target.value)}
                                 required
                                 disabled={!formData.customer_id}
                             >
-                                <option value="">Select Sales Order</option>
-                                {salesOrders.map(so => (
-                                    <option key={so.id} value={so.id}>
-                                        {so.so_number} - {so.quotations?.quotation_number}
+                                <option value="">Select Quotation</option>
+                                {quotations.map(q => (
+                                    <option key={q.id} value={q.id}>
+                                        {q.quote_number} - {q.subject || q.quotation_number || ''}
                                     </option>
                                 ))}
                             </select>

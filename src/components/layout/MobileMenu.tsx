@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { X, LayoutDashboard, FileText, FileCheck, ShoppingCart, Package, Users, Building2, ScrollText, ChevronDown, ChevronUp, Database } from 'lucide-react';
+import { X, LayoutDashboard, FileText, FileCheck, ShoppingCart, Package, Users, Building2, ScrollText, ChevronDown, ChevronUp, Database, MapPin } from 'lucide-react';
 
 interface MobileMenuProps {
     isOpen: boolean;
@@ -10,7 +10,7 @@ interface MobileMenuProps {
 export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
     const location = useLocation();
     const [dataMasterOpen, setDataMasterOpen] = useState(() => {
-        const dataMasterPaths = ['/items', '/customers', '/vendors', '/terms'];
+        const dataMasterPaths = ['/items', '/customers', '/vendors', '/terms', '/working-areas'];
         return dataMasterPaths.some(path => location.pathname === path);
     });
 
@@ -26,6 +26,7 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({ isOpen, onClose }) => {
         { to: '/customers', icon: Users, label: 'Customers' },
         { to: '/vendors', icon: Building2, label: 'Vendors' },
         { to: '/terms', icon: ScrollText, label: 'Terms & Conditions' },
+        { to: '/working-areas', icon: MapPin, label: 'Working Areas' },
     ];
 
     const isDataMasterActive = dataMasterItems.some(item => location.pathname === item.to);

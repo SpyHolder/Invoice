@@ -17,9 +17,7 @@ import { ViewInvoice } from './pages/ViewInvoice';
 import { Quotations } from './pages/Quotations';
 import { QuotationForm } from './pages/QuotationForm';
 import { ViewQuotation } from './pages/ViewQuotation';
-import { SalesOrders } from './pages/SalesOrders';
-import { SalesOrderForm } from './pages/SalesOrderForm';
-import { ViewSalesOrder } from './pages/ViewSalesOrder';
+
 import { DeliveryOrders } from './pages/DeliveryOrders';
 import { DeliveryOrderForm } from './pages/DeliveryOrderForm';
 import { ViewDeliveryOrder } from './pages/ViewDeliveryOrder';
@@ -27,6 +25,7 @@ import { PurchaseOrders } from './pages/PurchaseOrders';
 import { PurchaseOrderForm } from './pages/PurchaseOrderForm';
 import { ViewPurchaseOrder } from './pages/ViewPurchaseOrder';
 import { TermsConditions } from './pages/TermsConditions';
+import { WorkingAreas } from './pages/WorkingAreas';
 
 function App() {
     return (
@@ -160,46 +159,8 @@ function App() {
                                 </ProtectedRoute>
                             }
                         />
-                        <Route
-                            path="/sales-orders"
-                            element={
-                                <ProtectedRoute>
-                                    <MainLayout>
-                                        <SalesOrders />
-                                    </MainLayout>
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
-                            path="/sales-orders/new"
-                            element={
-                                <ProtectedRoute>
-                                    <MainLayout>
-                                        <SalesOrderForm />
-                                    </MainLayout>
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
-                            path="/sales-orders/edit/:id"
-                            element={
-                                <ProtectedRoute>
-                                    <MainLayout>
-                                        <SalesOrderForm />
-                                    </MainLayout>
-                                </ProtectedRoute>
-                            }
-                        />
-                        <Route
-                            path="/sales-orders/:id"
-                            element={
-                                <ProtectedRoute>
-                                    <MainLayout>
-                                        <ViewSalesOrder />
-                                    </MainLayout>
-                                </ProtectedRoute>
-                            }
-                        />
+                        {/* SO module removed — redirect to quotations */}
+                        <Route path="/sales-orders/*" element={<Navigate to="/quotations" replace />} />
                         <Route
                             path="/delivery-orders"
                             element={
@@ -286,6 +247,16 @@ function App() {
                                 <ProtectedRoute>
                                     <MainLayout>
                                         <TermsConditions />
+                                    </MainLayout>
+                                </ProtectedRoute>
+                            }
+                        />
+                        <Route
+                            path="/working-areas"
+                            element={
+                                <ProtectedRoute>
+                                    <MainLayout>
+                                        <WorkingAreas />
                                     </MainLayout>
                                 </ProtectedRoute>
                             }

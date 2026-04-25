@@ -1,5 +1,5 @@
-﻿import { forwardRef } from 'react';
-import { Quotation, QuotationItem, Partner, Company } from '../types';
+import { forwardRef } from 'react';
+import { Quotation, QuotationItem, Partner, Company, BankAccount } from '../types';
 
 interface QuotationTemplateProps {
     quotation: Quotation;
@@ -7,20 +7,21 @@ interface QuotationTemplateProps {
     items: QuotationItem[];
     company?: Company;
     termsContent?: string;
+    bankDetails?: BankAccount;
 }
 
-// Static Bank Details (CNK Bank Details)
-const BANK_DETAILS = {
-    bankName: 'UOB Serangoon Central',
-    bankAddress: 'No.23 Serangoon Central, #01-52/53 NEX, Singapore 556083',
-    accountNumber: '123456788',
-    swiftCode: 'UOVBSGSG',
-    branchCode: '65432343',
-    paynowUen: '202244240N'
+// Fallback Bank Details (CNK Bank Details) if none provided
+const FALLBACK_BANK = {
+    bank_name: 'UOB Serangoon Central',
+    bank_address: 'No.23 Serangoon Central, #01-52/53 NEX, Singapore 556083',
+    account_number: '123456788',
+    swift_code: 'UOVBSGSG',
+    branch_code: '65432343',
+    paynow_uen: '202244240N'
 };
 
 export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplateProps>(
-    ({ quotation, customer, items, company, termsContent = '' }, ref) => {
+    ({ quotation, customer, items, company, termsContent = '', bankDetails }, ref) => {
         const formatDate = (dateString: string) => {
             return new Date(dateString).toLocaleDateString('en-GB', {
                 day: 'numeric',
@@ -28,6 +29,8 @@ export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplatePro
                 year: 'numeric',
             });
         };
+
+        const bank = bankDetails || FALLBACK_BANK;
 
         return (
             <div ref={ref} className="p-8 bg-white text-black font-sans h-full mx-auto" style={{ width: '210mm', minHeight: '297mm' }}>
@@ -201,34 +204,34 @@ export const QuotationTemplate = forwardRef<HTMLDivElement, QuotationTemplatePro
                     </div>
                 )}
 
-                {/* CNK Bank Details (Static) */}
+                {/* Bank Details (Dynamic from DB or fallback) */}
                 <div className="mt-8 text-xs">
-                    <p className="font-bold mb-2">CNK Bank Details</p>
+                    <p className="font-bold mb-2">{company?.name || 'CNK'} Bank Details</p>
                     <table className="border-collapse border border-black">
                         <tbody>
                             <tr>
                                 <td className="border border-black py-0.5 px-1 w-48">Bank Name (Final Destination Bank)</td>
-                                <td className="border border-black py-0.5 px-1">{BANK_DETAILS.bankName}</td>
+                                <td className="border border-black py-0.5 px-1">{bank.bank_name}</td>
                             </tr>
                             <tr>
                                 <td className="border border-black py-0.5 px-1">Bank Address</td>
-                                <td className="border border-black py-0.5 px-1">{BANK_DETAILS.bankAddress}</td>
+                                <td className="border border-black py-0.5 px-1">{bank.bank_address}</td>
                             </tr>
                             <tr>
                                 <td className="border border-black py-0.5 px-1">Account Number</td>
-                                <td className="border border-black py-0.5 px-1">{BANK_DETAILS.accountNumber}</td>
+                                <td className="border border-black py-0.5 px-1">{bank.account_number}</td>
                             </tr>
                             <tr>
                                 <td className="border border-black py-0.5 px-1">Swift Code (Non-US Bank)</td>
-                                <td className="border border-black py-0.5 px-1">{BANK_DETAILS.swiftCode}</td>
+                                <td className="border border-black py-0.5 px-1">{bank.swift_code}</td>
                             </tr>
                             <tr>
                                 <td className="border border-black py-0.5 px-1">Bank Key/Branch Code</td>
-                                <td className="border border-black py-0.5 px-1">{BANK_DETAILS.branchCode}</td>
+                                <td className="border border-black py-0.5 px-1">{bank.branch_code}</td>
                             </tr>
                             <tr>
                                 <td className="border border-black py-0.5 px-1">PayNow UEN</td>
-                                <td className="border border-black py-0.5 px-1">{BANK_DETAILS.paynowUen}</td>
+                                <td className="border border-black py-0.5 px-1">{bank.paynow_uen}</td>
                             </tr>
                         </tbody>
                     </table>

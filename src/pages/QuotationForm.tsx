@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Plus, Trash2, ArrowLeft, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, ArrowLeft, ChevronDown, Building2, CreditCard, ShoppingCart, Copy } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Partner, Item } from '../types';
+import { Partner, Item, BankAccount } from '../types';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -21,7 +21,7 @@ const addDays = (dateStr: string, days: number): string => {
 interface LineItem {
     id: string;
     item_id: string;
-    item_name: string; // Used for display context/search if needed
+    item_name: string;
     item_description: string;
     quantity: number;
     unit_price: number;
@@ -29,6 +29,18 @@ interface LineItem {
     disc_amount: number;
     uom: string;
     total_price: number;
+    needs_procurement: boolean;
+}
+
+interface ProcurementItem {
+    id: string;
+    item_id: string;
+    item_code: string;
+    description: string;
+    quantity: number;
+    uom: string;
+    unit_price: number;
+    total: number;
 }
 
 export const QuotationForm = () => {
@@ -44,6 +56,20 @@ export const QuotationForm = () => {
     // Terms content
     const [termsContent, setTermsContent] = useState('');
 
+    // Bank details
+    const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+    const [editingBank, setEditingBank] = useState<Partial<BankAccount> | null>(null);
+    const [showBankForm, setShowBankForm] = useState(false);
+
+    // Add multiple items popover
+    const [showAddMultiple, setShowAddMultiple] = useState(false);
+    const [addCount, setAddCount] = useState(1);
+    const addMultipleRef = useRef<HTMLDivElement>(null);
+
+    // Procurement items (PO items modal)
+    const [procurementItems, setProcurementItems] = useState<ProcurementItem[]>([]);
+    const [showProcurementModal, setShowProcurementModal] = useState(false);
+
     const [formData, setFormData] = useState({
         customer_id: '',
         date: new Date().toISOString().split('T')[0],
@@ -53,6 +79,9 @@ export const QuotationForm = () => {
         rfq_ref_no: '',
         discount_amount: 0,
         gst_rate: 0,
+        project_schedule_date: '',
+        quote_number: '',
+        quotation_number: '',
     });
 
     const [lineItems, setLineItems] = useState<LineItem[]>([
@@ -67,6 +96,7 @@ export const QuotationForm = () => {
             disc_amount: 0,
             uom: 'EA',
             total_price: 0,
+            needs_procurement: false,
         },
     ]);
 
@@ -92,7 +122,6 @@ export const QuotationForm = () => {
     const deleteSelectedItems = () => {
         if (selectedItems.size === 0) return;
         const remaining = lineItems.filter(i => !selectedItems.has(i.id));
-        // Always keep at least one item
         if (remaining.length === 0) {
             showToast('Cannot delete all items. At least one item is required.', 'error');
             return;
@@ -102,10 +131,22 @@ export const QuotationForm = () => {
         showToast(`Deleted ${selectedItems.size} item(s)`, 'success');
     };
 
+    // Close add-multiple popover on outside click
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (addMultipleRef.current && !addMultipleRef.current.contains(e.target as Node)) {
+                setShowAddMultiple(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
     useEffect(() => {
         const init = async () => {
             fetchCustomers();
             const masterItems = await fetchItems();
+            fetchBankAccounts();
             const params = new URLSearchParams(window.location.search);
             const duplicateId = params.get('duplicate');
             if (id) {
@@ -114,7 +155,6 @@ export const QuotationForm = () => {
             } else if (duplicateId) {
                 await loadQuotation(duplicateId, true, masterItems);
             } else {
-                // Load default terms for new quotation
                 loadDefaultTerms();
             }
         };
@@ -133,6 +173,15 @@ export const QuotationForm = () => {
             return data;
         }
         return [];
+    };
+
+    const fetchBankAccounts = async () => {
+        try {
+            const data = await api.get<BankAccount[]>('/companies/bank/all');
+            if (data) setBankAccounts(data);
+        } catch (e) {
+            console.error('Error fetching bank accounts:', e);
+        }
     };
 
     const loadDefaultTerms = async () => {
@@ -161,13 +210,15 @@ export const QuotationForm = () => {
                     rfq_ref_no: quotation.rfq_ref_no || '',
                     discount_amount: quotation.discount_amount,
                     gst_rate: quotation.gst_rate,
+                    project_schedule_date: quotation.project_schedule_date ? new Date(quotation.project_schedule_date).toISOString().split('T')[0] : '',
+                    quote_number: isDuplicate ? '' : quotation.quote_number || quotation.quotation_number,
+                    quotation_number: isDuplicate ? '' : quotation.quotation_number || quotation.quote_number,
                 });
 
                 if (quotation.items && quotation.items.length > 0) {
                     const loadedItems = quotation.items.map((item: any, index: number) => {
                         let matchedItemId = item.item_id || '';
 
-                        // Auto-match if item_id is missing or doesn't match items list
                         if (!matchedItemId || !masterItems.find(i => i.id == matchedItemId)) {
                             const match = masterItems.find(i =>
                                 (i.name && item.item_name && String(i.name).toLowerCase() === String(item.item_name).toLowerCase()) ||
@@ -189,6 +240,7 @@ export const QuotationForm = () => {
                             disc_amount: item.disc_amount,
                             uom: item.uom || 'EA',
                             total_price: item.total_price,
+                            needs_procurement: item.needs_procurement || false,
                         };
                     });
                     setLineItems(loadedItems);
@@ -200,6 +252,20 @@ export const QuotationForm = () => {
 
                 // Load terms_content
                 setTermsContent(quotation.terms_content || '');
+
+                // Load procurement items
+                if (quotation.procurement_items && quotation.procurement_items.length > 0) {
+                    setProcurementItems(quotation.procurement_items.map((pi: any, idx: number) => ({
+                        id: `proc-${idx}`,
+                        item_id: pi.item_id || '',
+                        item_code: pi.item_code || '',
+                        description: pi.description || '',
+                        quantity: pi.quantity || 1,
+                        uom: pi.uom || 'EA',
+                        unit_price: pi.unit_price || 0,
+                        total: pi.total || 0,
+                    })));
+                }
             }
         } catch (error: any) {
             console.error('Error loading quotation:', error);
@@ -210,11 +276,11 @@ export const QuotationForm = () => {
         }
     };
 
-    const addLineItem = () => {
-        setLineItems([
-            ...lineItems,
-            {
-                id: Date.now().toString(),
+    const addLineItems = (count: number) => {
+        const newItems: LineItem[] = [];
+        for (let i = 0; i < count; i++) {
+            newItems.push({
+                id: (Date.now() + i).toString(),
                 item_id: '',
                 item_name: '',
                 item_description: '',
@@ -224,8 +290,13 @@ export const QuotationForm = () => {
                 disc_amount: 0,
                 uom: 'EA',
                 total_price: 0,
-            },
-        ]);
+                needs_procurement: false,
+            });
+        }
+        setLineItems([...lineItems, ...newItems]);
+        setShowAddMultiple(false);
+        setAddCount(1);
+        if (count > 1) showToast(`Added ${count} item rows`, 'success');
     };
 
     const removeLineItem = (id: string) => {
@@ -283,7 +354,35 @@ export const QuotationForm = () => {
         return { subtotal, headerDiscount, gstAmount, total };
     };
 
+    // Bank account management
+    const handleSaveBank = async () => {
+        if (!editingBank) return;
+        try {
+            if (editingBank.id) {
+                await api.put(`/companies/bank/${editingBank.id}`, editingBank);
+                showToast('Bank account updated', 'success');
+            } else {
+                await api.post('/companies/bank', { ...editingBank, is_primary: bankAccounts.length === 0 });
+                showToast('Bank account created', 'success');
+            }
+            fetchBankAccounts();
+            setEditingBank(null);
+            setShowBankForm(false);
+        } catch (e: any) {
+            showToast(e.message || 'Failed to save bank', 'error');
+        }
+    };
 
+    const handleDeleteBank = async (bankId: string) => {
+        if (!confirm('Delete this bank account?')) return;
+        try {
+            await api.delete(`/companies/bank/${bankId}`);
+            showToast('Bank account deleted', 'success');
+            fetchBankAccounts();
+        } catch (e: any) {
+            showToast(e.message || 'Failed to delete', 'error');
+        }
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -301,10 +400,12 @@ export const QuotationForm = () => {
                 unit_price: item.unit_price,
                 disc_percent: item.disc_percent,
                 disc_amount: item.disc_amount,
-                total_price: item.total_price
+                total_price: item.total_price,
+                item_name: item.item_name || null,
+                needs_procurement: item.needs_procurement || false,
             }));
 
-            const quotationData = {
+            const quotationData: any = {
                 customer_id: formData.customer_id,
                 date: formData.date,
                 validity_date: formData.valid_until,
@@ -317,18 +418,34 @@ export const QuotationForm = () => {
                 total_amount: totals.total,
                 total: totals.total,
                 items: itemsToSubmit,
-                terms_content: termsContent
+                procurement_items: procurementItems.map(pi => ({
+                    item_id: pi.item_id || null,
+                    item_code: pi.item_code || '',
+                    description: pi.description || '',
+                    quantity: pi.quantity || 1,
+                    uom: pi.uom || 'EA',
+                    unit_price: pi.unit_price || 0,
+                    total: pi.total || 0,
+                })),
+                terms_content: termsContent,
+                project_schedule_date: formData.project_schedule_date || null,
+                quote_number: formData.quote_number,
+                quotation_number: formData.quotation_number,
             };
 
             if (isEditMode && id) {
+                // Preserve current status on edit
+                const current = await api.get<any>(`/quotations/${id}`);
+                quotationData.status = current?.status || 'draft';
+                quotationData.customer_po_number = current?.customer_po_number || null;
                 await api.put(`/quotations/${id}`, quotationData);
             } else {
                 const quoteNum = 'CNK-Q-' + Date.now();
                 await api.post('/quotations', {
                     ...quotationData,
+                    status: 'draft',
                     quotation_number: quoteNum,
                     quote_number: quoteNum,
-                    status: 'draft'
                 });
             }
 
@@ -345,8 +462,6 @@ export const QuotationForm = () => {
 
     const totals = calculateTotals();
 
-
-
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -359,6 +474,13 @@ export const QuotationForm = () => {
                         <h1 className="text-3xl font-bold text-gray-900">{isEditMode ? 'Edit' : 'Create'} Quotation</h1>
                     </div>
                 </div>
+                <Button type="button" variant="secondary" onClick={() => setShowProcurementModal(true)}>
+                    <ShoppingCart className="w-4 h-4" />
+                    PO Items
+                    {procurementItems.length > 0 && (
+                        <span className="ml-1.5 px-1.5 py-0.5 text-xs font-bold bg-orange-500 text-white rounded-full">{procurementItems.length}</span>
+                    )}
+                </Button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -459,6 +581,29 @@ export const QuotationForm = () => {
                                 </button>
                             </div>
                         </div>
+
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                Project Schedule Date
+                            </label>
+                            <div className="flex gap-2">
+                                <div className="relative flex-1">
+                                    <input
+                                        type="date"
+                                        value={formData.project_schedule_date}
+                                        onChange={(e) => setFormData({ ...formData, project_schedule_date: e.target.value })}
+                                        className="w-full px-4 py-2.5 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm hover:border-blue-400"
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setFormData({ ...formData, project_schedule_date: addDays(formData.date || new Date().toISOString().split('T')[0], 30) })}
+                                    className="px-3 py-2 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 hover:border-blue-300 transition-all whitespace-nowrap"
+                                >
+                                    +30 Days
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </Card>
 
@@ -484,10 +629,57 @@ export const QuotationForm = () => {
                                     </button>
                                 </div>
                             )}
-                            <Button type="button" onClick={addLineItem} variant="secondary" size="sm">
-                                <Plus className="w-4 h-4 mr-1" />
-                                Add Item
-                            </Button>
+                            {/* Add items with count selector */}
+                            <div className="relative" ref={addMultipleRef}>
+                                <div className="flex">
+                                    <Button type="button" onClick={() => addLineItems(1)} variant="secondary" size="sm">
+                                        <Plus className="w-4 h-4 mr-1" />
+                                        Add Item
+                                    </Button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowAddMultiple(!showAddMultiple)}
+                                        className="ml-0.5 px-1.5 py-1.5 text-gray-500 bg-gray-100 border border-gray-300 rounded-r-lg hover:bg-gray-200 transition-colors -ml-px"
+                                    >
+                                        <ChevronDown className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                                {showAddMultiple && (
+                                    <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl p-3 z-50 w-56">
+                                        <p className="text-xs font-medium text-gray-500 mb-2">Add multiple rows</p>
+                                        <div className="flex gap-1.5 mb-2">
+                                            {[1, 3, 5, 10].map(n => (
+                                                <button
+                                                    key={n}
+                                                    type="button"
+                                                    onClick={() => addLineItems(n)}
+                                                    className="flex-1 px-2 py-1.5 text-xs font-semibold border border-gray-200 rounded-md hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-colors"
+                                                >
+                                                    +{n}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <div className="flex gap-1.5">
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="50"
+                                                value={addCount}
+                                                onChange={e => setAddCount(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
+                                                className="flex-1 px-2 py-1.5 text-xs border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                placeholder="Custom..."
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => addLineItems(addCount)}
+                                                className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                                            >
+                                                Add
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -692,6 +884,305 @@ export const QuotationForm = () => {
                         </div>
                     </div>
                 </Card>
+
+                {/* Bank Details Section */}
+                <Card>
+                    <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-xl font-semibold flex items-center gap-2">
+                            <span className="w-1 h-6 bg-green-600 rounded-full"></span>
+                            <CreditCard className="w-5 h-5 text-green-600" />
+                            Bank Details
+                            <span className="text-sm font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{bankAccounts.length}</span>
+                        </h2>
+                        <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => { setEditingBank({ bank_name: '', bank_address: '', account_number: '', swift_code: '', branch_code: '', paynow_uen: '' }); setShowBankForm(true); }}
+                        >
+                            <Plus className="w-4 h-4 mr-1" />
+                            Add Bank
+                        </Button>
+                    </div>
+
+                    {bankAccounts.length === 0 ? (
+                        <div className="text-center py-8 text-gray-400">
+                            <Building2 className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                            <p className="text-sm">No bank accounts configured yet.</p>
+                            <p className="text-xs mt-1">Add bank details that will appear on printed quotations.</p>
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="bg-gray-50 border-b border-gray-200">
+                                        <th className="py-2 px-3 text-left text-xs font-medium text-gray-500 uppercase">Bank Name</th>
+                                        <th className="py-2 px-3 text-left text-xs font-medium text-gray-500 uppercase">Account No</th>
+                                        <th className="py-2 px-3 text-left text-xs font-medium text-gray-500 uppercase">Swift</th>
+                                        <th className="py-2 px-3 text-left text-xs font-medium text-gray-500 uppercase">Branch</th>
+                                        <th className="py-2 px-3 text-left text-xs font-medium text-gray-500 uppercase">PayNow</th>
+                                        <th className="py-2 px-3 w-20"></th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {bankAccounts.map(bank => (
+                                        <tr key={bank.id} className="hover:bg-gray-50 transition-colors">
+                                            <td className="py-2 px-3 font-medium text-gray-900">
+                                                {bank.bank_name}
+                                                {bank.is_primary && <span className="ml-1.5 text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">Primary</span>}
+                                            </td>
+                                            <td className="py-2 px-3 text-gray-600">{bank.account_number}</td>
+                                            <td className="py-2 px-3 text-gray-600">{bank.swift_code}</td>
+                                            <td className="py-2 px-3 text-gray-600">{bank.branch_code}</td>
+                                            <td className="py-2 px-3 text-gray-600">{bank.paynow_uen}</td>
+                                            <td className="py-2 px-3">
+                                                <div className="flex gap-1">
+                                                    <button type="button" onClick={() => { setEditingBank(bank); setShowBankForm(true); }} className="text-gray-400 hover:text-blue-600 transition-colors p-1">
+                                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                                    </button>
+                                                    <button type="button" onClick={() => handleDeleteBank(bank.id)} className="text-gray-400 hover:text-red-600 transition-colors p-1">
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+
+                    {/* Bank Form Modal */}
+                    {showBankForm && editingBank && (
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6">
+                                <h3 className="text-lg font-semibold mb-4">{editingBank.id ? 'Edit' : 'Add'} Bank Account</h3>
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
+                                        <input type="text" value={editingBank.bank_name || ''} onChange={e => setEditingBank({ ...editingBank, bank_name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. UOB Serangoon Central" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Bank Address</label>
+                                        <input type="text" value={editingBank.bank_address || ''} onChange={e => setEditingBank({ ...editingBank, bank_address: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Bank address" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Account Number</label>
+                                            <input type="text" value={editingBank.account_number || ''} onChange={e => setEditingBank({ ...editingBank, account_number: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Swift Code</label>
+                                            <input type="text" value={editingBank.swift_code || ''} onChange={e => setEditingBank({ ...editingBank, swift_code: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Branch Code</label>
+                                            <input type="text" value={editingBank.branch_code || ''} onChange={e => setEditingBank({ ...editingBank, branch_code: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">PayNow UEN</label>
+                                            <input type="text" value={editingBank.paynow_uen || ''} onChange={e => setEditingBank({ ...editingBank, paynow_uen: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex justify-end gap-3 mt-6">
+                                    <Button type="button" variant="secondary" onClick={() => { setShowBankForm(false); setEditingBank(null); }}>Cancel</Button>
+                                    <Button type="button" onClick={handleSaveBank}>Save</Button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </Card>
+
+                {/* Procurement Items Modal */}
+                {showProcurementModal && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+                            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                                <div>
+                                    <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                                        <ShoppingCart className="w-5 h-5 text-orange-600" />
+                                        Procurement Items (PO)
+                                    </h3>
+                                    <p className="text-sm text-gray-500 mt-0.5">Items yang akan masuk ke Purchase Order saat Create PO</p>
+                                </div>
+                                <button type="button" onClick={() => setShowProcurementModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                            </div>
+
+                            <div className="p-6 overflow-y-auto flex-1">
+                                {/* Actions Row */}
+                                <div className="flex items-center gap-2 mb-4">
+                                    <Button type="button" variant="secondary" size="sm" onClick={() => {
+                                        setProcurementItems(prev => [...prev, {
+                                            id: `proc-${Date.now()}`,
+                                            item_id: '',
+                                            item_code: '',
+                                            description: '',
+                                            quantity: 1,
+                                            uom: 'EA',
+                                            unit_price: 0,
+                                            total: 0,
+                                        }]);
+                                    }}>
+                                        <Plus className="w-4 h-4" /> Add Item
+                                    </Button>
+                                    <Button type="button" variant="secondary" size="sm" onClick={() => {
+                                        const imported: ProcurementItem[] = lineItems.map((li, idx) => ({
+                                            id: `imp-${Date.now()}-${idx}`,
+                                            item_id: li.item_id || '',
+                                            item_code: '',
+                                            description: li.item_description || li.item_name || '',
+                                            quantity: li.quantity,
+                                            uom: li.uom || 'EA',
+                                            unit_price: li.unit_price || 0,
+                                            total: li.total_price || (li.quantity * li.unit_price),
+                                        }));
+                                        setProcurementItems(prev => [...prev, ...imported]);
+                                        showToast(`Imported ${imported.length} item(s) from line items`, 'success');
+                                    }}>
+                                        <Copy className="w-4 h-4" /> Import from Line Items
+                                    </Button>
+                                    {procurementItems.length > 0 && (
+                                        <Button type="button" variant="secondary" size="sm" onClick={() => { setProcurementItems([]); showToast('All procurement items cleared', 'info'); }}>
+                                            <Trash2 className="w-4 h-4" /> Clear All
+                                        </Button>
+                                    )}
+                                </div>
+
+                                {procurementItems.length === 0 ? (
+                                    <div className="text-center py-12 text-gray-400">
+                                        <ShoppingCart className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                                        <p className="text-sm">Belum ada procurement items.</p>
+                                        <p className="text-xs mt-1">Tambah item manual atau import dari Line Items.</p>
+                                    </div>
+                                ) : (
+                                    <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                                        <table className="w-full text-sm">
+                                            <thead>
+                                                <tr className="bg-gray-50 border-b border-gray-200">
+                                                    <th className="py-2 px-3 text-left text-xs font-medium text-gray-500 uppercase w-8">#</th>
+                                                    <th className="py-2 px-3 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
+                                                    <th className="py-2 px-3 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                                                    <th className="py-2 px-3 text-center text-xs font-medium text-gray-500 uppercase w-20">Qty</th>
+                                                    <th className="py-2 px-3 text-center text-xs font-medium text-gray-500 uppercase w-20">UOM</th>
+                                                    <th className="py-2 px-3 text-right text-xs font-medium text-gray-500 uppercase w-28">Unit Price</th>
+                                                    <th className="py-2 px-3 text-right text-xs font-medium text-gray-500 uppercase w-28">Total</th>
+                                                    <th className="py-2 px-3 w-12"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-gray-100">
+                                                {procurementItems.map((pi, idx) => (
+                                                    <tr key={pi.id} className="hover:bg-gray-50 transition-colors">
+                                                        <td className="py-2 px-3 text-gray-400 text-center">{idx + 1}</td>
+                                                        <td className="py-2 px-3">
+                                                            <SearchableSelect
+                                                                value={pi.item_id}
+                                                                onChange={(val) => {
+                                                                    const selectedItem = items.find(i => i.id === val);
+                                                                    setProcurementItems(prev => prev.map(p => p.id === pi.id ? {
+                                                                        ...p,
+                                                                        item_id: val,
+                                                                        item_code: selectedItem?.item_code || '',
+                                                                        description: selectedItem?.name || p.description,
+                                                                        unit_price: selectedItem?.price || p.unit_price,
+                                                                        total: (selectedItem?.price || p.unit_price) * p.quantity,
+                                                                    } : p));
+                                                                }}
+                                                                options={items.map(i => ({ label: `${i.item_code ? i.item_code + ' - ' : ''}${i.name}`, value: i.id }))}
+                                                                placeholder="Select..."
+                                                                className="w-full min-w-[140px]"
+                                                            />
+                                                        </td>
+                                                        <td className="py-2 px-3">
+                                                            <input
+                                                                type="text"
+                                                                value={pi.description}
+                                                                onChange={(e) => setProcurementItems(prev => prev.map(p => p.id === pi.id ? { ...p, description: e.target.value } : p))}
+                                                                className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-[120px]"
+                                                                placeholder="Description"
+                                                            />
+                                                        </td>
+                                                        <td className="py-2 px-3">
+                                                            <input
+                                                                type="number"
+                                                                value={pi.quantity}
+                                                                onChange={(e) => {
+                                                                    const qty = parseFloat(e.target.value) || 0;
+                                                                    setProcurementItems(prev => prev.map(p => p.id === pi.id ? { ...p, quantity: qty, total: qty * p.unit_price } : p));
+                                                                }}
+                                                                className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm text-center focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                min="0"
+                                                            />
+                                                        </td>
+                                                        <td className="py-2 px-3">
+                                                            <select
+                                                                value={pi.uom}
+                                                                onChange={(e) => setProcurementItems(prev => prev.map(p => p.id === pi.id ? { ...p, uom: e.target.value } : p))}
+                                                                className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                            >
+                                                                {['EA', 'SET', 'LOT', 'PCS', 'M', 'KG', 'L', 'BOX', 'ROLL', 'UNIT'].map(u => (
+                                                                    <option key={u} value={u}>{u}</option>
+                                                                ))}
+                                                            </select>
+                                                        </td>
+                                                        <td className="py-2 px-3">
+                                                            <input
+                                                                type="number"
+                                                                value={pi.unit_price}
+                                                                onChange={(e) => {
+                                                                    const price = parseFloat(e.target.value) || 0;
+                                                                    setProcurementItems(prev => prev.map(p => p.id === pi.id ? { ...p, unit_price: price, total: p.quantity * price } : p));
+                                                                }}
+                                                                className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm text-right focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                min="0" step="0.01"
+                                                            />
+                                                        </td>
+                                                        <td className="py-2 px-3 text-right font-medium text-gray-900">
+                                                            ${pi.total.toFixed(2)}
+                                                        </td>
+                                                        <td className="py-2 px-3">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setProcurementItems(prev => prev.filter(p => p.id !== pi.id))}
+                                                                className="text-gray-400 hover:text-red-600 transition-colors p-1"
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+
+                                {/* Procurement Total */}
+                                {procurementItems.length > 0 && (
+                                    <div className="flex justify-end mt-4">
+                                        <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-3 w-64">
+                                            <div className="flex justify-between items-center text-sm">
+                                                <span className="text-gray-600">Total Items</span>
+                                                <span className="font-medium">{procurementItems.length}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-sm font-bold mt-1 pt-1 border-t border-orange-200">
+                                                <span className="text-gray-900">Grand Total</span>
+                                                <span className="text-orange-600">${procurementItems.reduce((sum, p) => sum + p.total, 0).toFixed(2)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex justify-end gap-3 p-6 border-t border-gray-200">
+                                <Button type="button" variant="secondary" onClick={() => setShowProcurementModal(false)}>Close</Button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 <div className="flex gap-4 justify-end pt-6 border-t border-gray-200 mt-8 sticky bottom-0 bg-gray-50/80 backdrop-blur-sm p-4 -mx-4 -mb-4 rounded-b-lg">
                     <Button type="button" variant="secondary" onClick={() => navigate('/quotations')}>
