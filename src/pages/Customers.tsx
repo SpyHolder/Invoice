@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Edit2, Trash2, Users, Search } from 'lucide-react';
+import { Plus, Edit2, Trash2, Users, Search, Phone } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -24,9 +24,30 @@ export const Customers = () => {
         company_name: '',
         attn_name: '',
         email: '',
-        phone: '',
         address: '',
     });
+
+    // Multi-phone support
+    const [phoneNumbers, setPhoneNumbers] = useState<string[]>(['']);
+
+    const addPhoneNumber = () => setPhoneNumbers(prev => [...prev, '']);
+    const removePhoneNumber = (idx: number) => {
+        if (phoneNumbers.length <= 1) return;
+        setPhoneNumbers(prev => prev.filter((_, i) => i !== idx));
+    };
+    const updatePhoneNumber = (idx: number, val: string) => {
+        setPhoneNumbers(prev => prev.map((p, i) => i === idx ? val : p));
+    };
+
+    // Parse phone from DB (could be JSON array or plain string)
+    const parsePhoneFromDB = (phone: string | null | undefined): string[] => {
+        if (!phone) return [''];
+        try {
+            const parsed = JSON.parse(phone);
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        } catch { /* plain string */ }
+        return [phone];
+    };
 
     useEffect(() => {
         fetchCustomers();
@@ -66,7 +87,7 @@ export const Customers = () => {
             company_name: formData.company_name,
             attn_name: formData.attn_name,
             email: formData.email || '',
-            phone: formData.phone || '',
+            phone: JSON.stringify(phoneNumbers.filter(p => p.trim())),
             address: formData.address || '',
             type: 'customer',
         };
@@ -97,9 +118,9 @@ export const Customers = () => {
             company_name: customer.company_name,
             attn_name: customer.attn_name || '',
             email: customer.email || '',
-            phone: customer.phone || '',
             address: customer.address || '',
         });
+        setPhoneNumbers(parsePhoneFromDB(customer.phone));
         setIsModalOpen(true);
     };
 
@@ -117,7 +138,8 @@ export const Customers = () => {
     };
 
     const resetForm = () => {
-        setFormData({ company_name: '', attn_name: '', email: '', phone: '', address: '' });
+        setFormData({ company_name: '', attn_name: '', email: '', address: '' });
+        setPhoneNumbers(['']);
         setEditingCustomer(null);
     };
 
@@ -178,7 +200,15 @@ export const Customers = () => {
                                         <td className="font-medium">{customer.company_name}</td>
                                         <td className="text-gray-600">{customer.attn_name || '-'}</td>
                                         <td className="text-gray-600">{customer.email || '-'}</td>
-                                        <td className="text-gray-600">{customer.phone || '-'}</td>
+                                        <td className="text-gray-600">
+                                            {(() => {
+                                                try {
+                                                    const parsed = JSON.parse(customer.phone || '[]');
+                                                    if (Array.isArray(parsed)) return parsed.filter(Boolean).join(', ') || '-';
+                                                } catch { /* plain string */ }
+                                                return customer.phone || '-';
+                                            })()}
+                                        </td>
                                         <td>
                                             <div className="flex gap-2">
                                                 <button
@@ -226,11 +256,43 @@ export const Customers = () => {
                         value={formData.email}
                         onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     />
-                    <Input
-                        label="Phone"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    />
+                    <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                            <label className="block text-sm font-medium text-gray-700 flex items-center gap-1.5">
+                                <Phone className="w-4 h-4 text-gray-400" />
+                                Phone Numbers
+                            </label>
+                            <button
+                                type="button"
+                                onClick={addPhoneNumber}
+                                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+                            >
+                                <Plus className="w-3 h-3" /> Add Phone
+                            </button>
+                        </div>
+                        <div className="space-y-2">
+                            {phoneNumbers.map((phone, idx) => (
+                                <div key={idx} className="flex items-center gap-2">
+                                    <span className="text-xs text-gray-400 w-4 text-center shrink-0">{idx + 1}</span>
+                                    <input
+                                        type="text"
+                                        value={phone}
+                                        onChange={(e) => updatePhoneNumber(idx, e.target.value)}
+                                        className="flex-1 px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm hover:border-blue-400 placeholder:text-gray-400"
+                                        placeholder="e.g. 021-333-2222"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => removePhoneNumber(idx)}
+                                        className="p-1.5 text-gray-400 hover:text-red-600 transition-colors rounded hover:bg-red-50 shrink-0"
+                                        disabled={phoneNumbers.length === 1}
+                                    >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                     <Input
                         label="Address"
                         value={formData.address}

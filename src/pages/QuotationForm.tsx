@@ -70,12 +70,38 @@ export const QuotationForm = () => {
     const [procurementItems, setProcurementItems] = useState<ProcurementItem[]>([]);
     const [showProcurementModal, setShowProcurementModal] = useState(false);
 
+    // Single contact field (plain string)
+    const [contact, setContact] = useState('');
+
+    // Customer snapshot (editable, like vendor snapshot in PO)
+    const [customerSnapshot, setCustomerSnapshot] = useState<{
+        company_name: string; attn_name: string; address: string; phone: string; email: string;
+    }>({ company_name: '', attn_name: '', address: '', phone: '', email: '' });
+
+    // Multi-phone for snapshot
+    const [snapshotPhones, setSnapshotPhones] = useState<string[]>(['']);
+    const addSnapshotPhone = () => setSnapshotPhones(prev => [...prev, '']);
+    const removeSnapshotPhone = (idx: number) => {
+        if (snapshotPhones.length <= 1) return;
+        setSnapshotPhones(prev => prev.filter((_, i) => i !== idx));
+    };
+    const updateSnapshotPhone = (idx: number, val: string) => {
+        setSnapshotPhones(prev => prev.map((p, i) => i === idx ? val : p));
+    };
+    const parsePhoneFromDB = (phone: string | null | undefined): string[] => {
+        if (!phone) return [''];
+        try {
+            const parsed = JSON.parse(phone);
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        } catch { /* plain string */ }
+        return [phone];
+    };
+
     const [formData, setFormData] = useState({
         customer_id: '',
         date: new Date().toISOString().split('T')[0],
         valid_until: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         subject: '',
-        contact: '',
         rfq_ref_no: '',
         discount_amount: 0,
         gst_rate: 0,
@@ -206,7 +232,6 @@ export const QuotationForm = () => {
                     date: isDuplicate ? new Date().toISOString().split('T')[0] : new Date(quotation.date).toISOString().split('T')[0],
                     valid_until: isDuplicate ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] : (quotation.validity_date ? new Date(quotation.validity_date).toISOString().split('T')[0] : ''),
                     subject: quotation.subject || '',
-                    contact: quotation.contact || '',
                     rfq_ref_no: quotation.rfq_ref_no || '',
                     discount_amount: quotation.discount_amount,
                     gst_rate: quotation.gst_rate,
@@ -214,6 +239,46 @@ export const QuotationForm = () => {
                     quote_number: isDuplicate ? '' : quotation.quote_number || quotation.quotation_number,
                     quotation_number: isDuplicate ? '' : quotation.quotation_number || quotation.quote_number,
                 });
+
+                // Restore customer snapshot
+                if (quotation.customer_snapshot) {
+                    const snap = typeof quotation.customer_snapshot === 'string' ? JSON.parse(quotation.customer_snapshot) : quotation.customer_snapshot;
+                    setCustomerSnapshot(snap);
+                    // Restore multi-phone state from snapshot
+                    setSnapshotPhones(parsePhoneFromDB(snap.phone));
+                } else if (quotation.customer_id) {
+                    // Fallback: populate from master (fetch directly since customers state may not be loaded yet)
+                    try {
+                        const cust = await api.get<any>(`/partners/${quotation.customer_id}`);
+                        if (cust) {
+                            setCustomerSnapshot({
+                                company_name: cust.company_name || '',
+                                attn_name: cust.attn_name || '',
+                                address: cust.address || '',
+                                phone: cust.phone || '',
+                                email: cust.email || '',
+                            });
+                            setSnapshotPhones(parsePhoneFromDB(cust.phone));
+                        }
+                    } catch (e) {
+                        console.error('Error fetching customer for snapshot fallback', e);
+                    }
+                }
+
+                if (quotation.contact) {
+                    try {
+                        const parsed = JSON.parse(quotation.contact);
+                        if (Array.isArray(parsed) && parsed.length > 0) {
+                            // Legacy JSON array — take first value
+                            setContact(parsed[0]?.value || parsed[0]?.name || '');
+                        } else {
+                            setContact(quotation.contact);
+                        }
+                    } catch {
+                        // Plain string
+                        setContact(quotation.contact);
+                    }
+                }
 
                 if (quotation.items && quotation.items.length > 0) {
                     const loadedItems = quotation.items.map((item: any, index: number) => {
@@ -410,7 +475,7 @@ export const QuotationForm = () => {
                 date: formData.date,
                 validity_date: formData.valid_until,
                 subject: formData.subject,
-                contact: formData.contact,
+                contact: contact,
                 rfq_ref_no: formData.rfq_ref_no,
                 subtotal: totals.subtotal,
                 discount_amount: totals.headerDiscount,
@@ -431,6 +496,10 @@ export const QuotationForm = () => {
                 project_schedule_date: formData.project_schedule_date || null,
                 quote_number: formData.quote_number,
                 quotation_number: formData.quotation_number,
+                customer_snapshot: {
+                    ...customerSnapshot,
+                    phone: JSON.stringify(snapshotPhones.filter(p => p.trim())),
+                },
             };
 
             if (isEditMode && id) {
@@ -498,11 +567,66 @@ export const QuotationForm = () => {
                             </label>
                             <SearchableSelect
                                 value={formData.customer_id}
-                                onChange={(val) => setFormData({ ...formData, customer_id: val })}
+                                onChange={(val) => {
+                                    setFormData({ ...formData, customer_id: val });
+                                    // Auto-fill customer snapshot
+                                    const selectedCustomer = customers.find(c => c.id === val);
+                                    if (selectedCustomer) {
+                                        setCustomerSnapshot({
+                                            company_name: selectedCustomer.company_name || '',
+                                            attn_name: selectedCustomer.attn_name || '',
+                                            address: selectedCustomer.address || '',
+                                            phone: selectedCustomer.phone || '',
+                                            email: selectedCustomer.email || '',
+                                        });
+                                        setSnapshotPhones(parsePhoneFromDB(selectedCustomer.phone));
+                                    }
+                                }}
                                 options={customers.map(c => ({ label: c.company_name, value: c.id }))}
                                 placeholder="Select Customer"
                                 className="w-full"
                             />
+                            {formData.customer_id && (
+                                <div className="mt-3 bg-gray-50 rounded-lg border border-gray-200 p-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="text-gray-500 text-xs font-medium uppercase block mb-1">Company</label>
+                                            <input type="text" value={customerSnapshot.company_name} onChange={e => setCustomerSnapshot(p => ({ ...p, company_name: e.target.value }))} className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                                        </div>
+                                        <div>
+                                            <label className="text-gray-500 text-xs font-medium uppercase block mb-1">Attn</label>
+                                            <input type="text" value={customerSnapshot.attn_name} onChange={e => setCustomerSnapshot(p => ({ ...p, attn_name: e.target.value }))} className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                                        </div>
+                                        <div className="md:col-span-2">
+                                            <label className="text-gray-500 text-xs font-medium uppercase block mb-1">Address</label>
+                                            <textarea value={customerSnapshot.address} onChange={e => setCustomerSnapshot(p => ({ ...p, address: e.target.value }))} className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[60px]" />
+                                        </div>
+                                        <div>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <label className="text-gray-500 text-xs font-medium uppercase">Phone</label>
+                                                <button type="button" onClick={addSnapshotPhone} className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors">
+                                                    <Plus className="w-2.5 h-2.5" /> Add Phone
+                                                </button>
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                {snapshotPhones.map((phone, idx) => (
+                                                    <div key={idx} className="flex items-center gap-1.5">
+                                                        <span className="text-[10px] text-gray-400 w-3 text-center shrink-0">{idx + 1}</span>
+                                                        <input type="text" value={phone} onChange={e => updateSnapshotPhone(idx, e.target.value)} className="flex-1 px-3 py-1.5 bg-white border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="e.g. 021-333-2222" />
+                                                        <button type="button" onClick={() => removeSnapshotPhone(idx)} className="p-1 text-gray-400 hover:text-red-600 transition-colors rounded hover:bg-red-50 shrink-0" disabled={snapshotPhones.length === 1}>
+                                                            <Trash2 className="w-3 h-3" />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="text-gray-500 text-xs font-medium uppercase block mb-1">Email</label>
+                                            <input type="text" value={customerSnapshot.email} onChange={e => setCustomerSnapshot(p => ({ ...p, email: e.target.value }))} className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div>
@@ -518,16 +642,16 @@ export const QuotationForm = () => {
                             />
                         </div>
 
-                        <div>
+                        <div className="md:col-span-2">
                             <label className="block text-sm font-medium text-gray-700 mb-1.5">
                                 Contact
                             </label>
                             <input
                                 type="text"
-                                value={formData.contact}
-                                onChange={(e) => setFormData({ ...formData, contact: e.target.value })}
-                                className="w-full px-4 py-2.5 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm hover:border-blue-400 placeholder:text-gray-400"
-                                placeholder="e.g. 085272124268"
+                                value={contact}
+                                onChange={(e) => setContact(e.target.value)}
+                                className="w-full px-3 py-2 bg-white text-gray-900 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm hover:border-blue-400 placeholder:text-gray-400"
+                                placeholder="Contact person / phone / email"
                             />
                         </div>
 
@@ -1079,23 +1203,32 @@ export const QuotationForm = () => {
                                                     <tr key={pi.id} className="hover:bg-gray-50 transition-colors">
                                                         <td className="py-2 px-3 text-gray-400 text-center">{idx + 1}</td>
                                                         <td className="py-2 px-3">
-                                                            <SearchableSelect
-                                                                value={pi.item_id}
-                                                                onChange={(val) => {
-                                                                    const selectedItem = items.find(i => i.id === val);
-                                                                    setProcurementItems(prev => prev.map(p => p.id === pi.id ? {
-                                                                        ...p,
-                                                                        item_id: val,
-                                                                        item_code: selectedItem?.item_code || '',
-                                                                        description: selectedItem?.name || p.description,
-                                                                        unit_price: selectedItem?.price || p.unit_price,
-                                                                        total: (selectedItem?.price || p.unit_price) * p.quantity,
-                                                                    } : p));
-                                                                }}
-                                                                options={items.map(i => ({ label: `${i.item_code ? i.item_code + ' - ' : ''}${i.name}`, value: i.id }))}
-                                                                placeholder="Select..."
-                                                                className="w-full min-w-[140px]"
-                                                            />
+                                                            <div className="space-y-1">
+                                                                <SearchableSelect
+                                                                    value={pi.item_id}
+                                                                    onChange={(val) => {
+                                                                        const selectedItem = items.find(i => i.id === val);
+                                                                        setProcurementItems(prev => prev.map(p => p.id === pi.id ? {
+                                                                            ...p,
+                                                                            item_id: val,
+                                                                            item_code: selectedItem?.item_code || '',
+                                                                            description: selectedItem?.name || p.description,
+                                                                            unit_price: selectedItem?.price || p.unit_price,
+                                                                            total: (selectedItem?.price || p.unit_price) * p.quantity,
+                                                                        } : p));
+                                                                    }}
+                                                                    options={items.map(i => ({ label: `${i.item_code ? i.item_code + ' - ' : ''}${i.name}`, value: i.id }))}
+                                                                    placeholder="Select or leave empty..."
+                                                                    className="w-full min-w-[140px]"
+                                                                />
+                                                                <input
+                                                                    type="text"
+                                                                    value={pi.item_code}
+                                                                    onChange={(e) => setProcurementItems(prev => prev.map(p => p.id === pi.id ? { ...p, item_code: e.target.value } : p))}
+                                                                    className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                    placeholder="Item Code (manual)"
+                                                                />
+                                                            </div>
                                                         </td>
                                                         <td className="py-2 px-3">
                                                             <input

@@ -493,6 +493,7 @@ export const DeliveryOrderForm = () => {
             if (isEditMode && id) {
                 await api.put(`/delivery-orders/${id}`, {
                     ...doData,
+                    do_number: formData.do_number,
                     items: allItems
                 });
             } else {

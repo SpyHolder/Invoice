@@ -1,4 +1,5 @@
 import { forwardRef } from 'react';
+import { CertificationFooter } from './CertificationFooter';
 import { SalesOrder, SalesOrderItem, Partner, Company } from '../types';
 
 interface SalesOrderTemplateProps {
@@ -28,7 +29,7 @@ export const SalesOrderTemplate = forwardRef<HTMLDivElement, SalesOrderTemplateP
         }, {} as Record<string, SalesOrderItem[]>);
 
         return (
-            <div ref={ref} className="p-8 bg-white text-black font-sans text-sm h-full mx-auto" style={{ width: '210mm', minHeight: '297mm' }}>
+            <div ref={ref} className="p-8 bg-white text-black font-sans text-sm h-full mx-auto print-page" style={{ width: '210mm', minHeight: '297mm', display: 'flex', flexDirection: 'column' }}>
                 {/* Header: Logo and Company Info */}
                 <div className="flex gap-4 mb-4 border-b pb-4">
                     <div className="w-32 h-32 border border-orange-400 flex items-center justify-center text-gray-400">
@@ -138,6 +139,9 @@ export const SalesOrderTemplate = forwardRef<HTMLDivElement, SalesOrderTemplateP
                         </div>
                     </div>
                 </div>
+
+                {/* Certification Footer */}
+                <CertificationFooter />
             </div>
         );
     }

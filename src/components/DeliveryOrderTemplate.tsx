@@ -1,4 +1,5 @@
 import { forwardRef } from 'react';
+import { CertificationFooter } from './CertificationFooter';
 import { DeliveryOrder, DeliveryOrderItem, Partner, Company } from '../types';
 
 interface DeliveryOrderTemplateProps {
@@ -33,7 +34,18 @@ export const DeliveryOrderTemplate = forwardRef<HTMLDivElement, DeliveryOrderTem
         };
 
         return (
-            <div ref={ref} className="p-8 bg-white text-black font-sans text-sm h-full mx-auto" style={{ width: '210mm', minHeight: '297mm' }}>
+            <div ref={ref} className="bg-white text-black font-sans text-sm mx-auto" style={{ width: '210mm' }}>
+                {/* Print-only fixed footer for every page */}
+                <CertificationFooter mode="print-fixed" />
+
+                {/* Suppress browser URL/title in print footer */}
+                <style>{`
+                    @media print {
+                        @page { margin: 0; }
+                    }
+                `}</style>
+
+            <div className="p-8 print-page" style={{ width: '210mm', minHeight: '297mm', display: 'flex', flexDirection: 'column' }}>
                 {/* Header: Logo + Address (Left) | DO Info Table (Right) */}
                 <div className="flex justify-between mb-6">
                     {/* Left: Logo + Company Address */}
@@ -191,6 +203,10 @@ export const DeliveryOrderTemplate = forwardRef<HTMLDivElement, DeliveryOrderTem
                         <p className="font-semibold">Company Stamp & Signature</p>
                     </div>
                 </div>
+
+                {/* Certification Footer (inline for screen preview) */}
+                <CertificationFooter mode="inline" />
+            </div>
             </div>
         );
     }

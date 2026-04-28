@@ -395,8 +395,8 @@ export const PurchaseOrderForm = () => {
                 shipping_info: po.shipping_info || '',
                 delivery_address: po.delivery_address || '',
                 doc_address: '',
-                subject: po.notes?.includes('Subject:') ? po.notes.split('Subject:')[1]?.split('\n')[0]?.trim() : '',
-                notes: po.notes || '',
+                subject: po.subject || (po.notes?.includes('Subject:') ? po.notes.split('Subject:')[1]?.split('\n')[0]?.trim() : ''),
+                notes: (po.notes || '').replace(/^Subject:\s*[^\n]*\n?/, '').trim(),
                 status: isDuplicate ? 'pending' : po.status,
                 gst_rate: po.tax && po.subtotal ? Math.round((po.tax / po.subtotal) * 100) : 9,
             });
@@ -689,25 +689,6 @@ export const PurchaseOrderForm = () => {
             const tax = calculateGST();
             const total = calculateTotal();
 
-            const notesWithMeta = [
-                formData.subject ? `Subject: ${formData.subject}` : '',
-                formData.notes
-            ].filter(Boolean).join('\n');
-
-            const allItems: any[] = [];
-            sections.forEach(s => {
-                s.items.forEach(item => {
-                    allItems.push({
-                        item_id: item.item_id || null,
-                        item_code: item.item_code,
-                        description: s.subject !== 'Default' ? `[${s.subject}] ${item.description}` : item.description,
-                        quantity: item.quantity,
-                        unit_price: item.unit_price,
-                        total: item.total
-                    });
-                });
-            });
-
             const poPayload = {
                 vendor_id: formData.vendor_id,
                 po_number: formData.po_number || `PO-${Date.now()}`,
@@ -715,10 +696,17 @@ export const PurchaseOrderForm = () => {
                 quote_ref: formData.quote_ref,
                 shipping_info: formData.shipping_info,
                 delivery_address: formData.delivery_address,
-                notes: notesWithMeta,
+                subject: formData.subject,
+                notes: formData.notes,
                 status: formData.status || 'pending',
                 subtotal, tax, total,
-                items: allItems,
+                items: sections.flatMap(s => s.items.map(item => ({
+                    item_code: item.item_code || '',
+                    description: s.subject !== 'Default' ? `[${s.subject}] ${item.description}` : item.description,
+                    quantity: item.quantity,
+                    unit_price: item.unit_price,
+                    total: item.total,
+                }))),
                 terms_content: termsContent,
                 vendor_snapshot: vendorSnapshot,
                 bill_ship_snapshot: billShipSnapshot,

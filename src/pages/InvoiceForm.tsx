@@ -41,6 +41,9 @@ export const InvoiceForm = () => {
     const [customers, setCustomers] = useState<Partner[]>([]);
     const [quotations, setQuotations] = useState<any[]>([]); // Quotations specific to customer
 
+    // Delivery sections (preserved from DO-based invoice)
+    const [deliverySections, setDeliverySections] = useState<any[]>([]);
+
     const [formData, setFormData] = useState({
         customer_id: '',
         quotation_id: '',
@@ -300,6 +303,13 @@ export const InvoiceForm = () => {
         }
     };
 
+    // Normalize date to YYYY-MM-DD (handles ISO timestamps like '2026-04-28T00:00:00.000Z')
+    const normalizeDate = (d: string | null | undefined): string => {
+        if (!d) return new Date().toISOString().split('T')[0];
+        if (d.includes('T')) return d.split('T')[0];
+        return d;
+    };
+
     const loadInvoice = async (invoiceId: string, isDuplicate = false) => {
         setLoading(true);
         try {
@@ -310,8 +320,8 @@ export const InvoiceForm = () => {
                 customer_id: inv.customer_id,
                 quotation_id: isDuplicate ? '' : (inv.quotation_id || ''),
                 invoice_number: isDuplicate ? '' : inv.invoice_number,
-                date: isDuplicate ? new Date().toISOString().split('T')[0] : inv.date,
-                due_date: isDuplicate ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] : inv.due_date,
+                date: isDuplicate ? new Date().toISOString().split('T')[0] : normalizeDate(inv.date),
+                due_date: isDuplicate ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] : normalizeDate(inv.due_date),
                 terms: inv.terms || '30 Days',
                 subject: inv.subject || '',
                 status: isDuplicate ? 'unpaid' : (inv.payment_status || 'unpaid'), // Database uses payment_status
@@ -324,7 +334,7 @@ export const InvoiceForm = () => {
                 notes: inv.notes || ''
             });
 
-            // Load Items
+            // Load Items (preserve do_section_id for DO-based invoices)
             const items = inv.items;
             if (items) {
                 setLineItems(items.map((i: any) => ({
@@ -335,8 +345,15 @@ export const InvoiceForm = () => {
                     quantity: i.quantity,
                     uom: i.uom || 'EA',
                     unit_price: i.unit_price,
-                    total_price: i.total_price  // DB column name
+                    total_price: i.total_price,  // DB column name
+                    do_section_id: i.do_section_id || null,
+                    group_name: i.group_name || '',
                 })));
+            }
+
+            // Load delivery sections (DO-based invoices)
+            if (inv.delivery_sections && inv.delivery_sections.length > 0) {
+                setDeliverySections(inv.delivery_sections);
             }
 
             // Fetch quotations for customer
@@ -411,13 +428,28 @@ export const InvoiceForm = () => {
                 tax: vals.taxVal, // Database column is 'tax', not 'tax_rate' or 'tax_amount'
                 grand_total: vals.total,
                 
+                notes: formData.notes || '',
+                
+                // Preserve delivery sections if this was a DO-based invoice
+                ...(deliverySections.length > 0 ? {
+                    delivery_sections: deliverySections.map(sec => ({
+                        id: sec.id,
+                        do_id: sec.do_id,
+                        section_number: sec.section_number,
+                        section_label: sec.section_label,
+                        temp_id: `temp-${sec.do_id}`
+                    }))
+                } : {}),
                 items: lineItems.map(i => ({
                     item_code: i.item_code || null,
                     description: i.description,
                     quantity: i.quantity,
                     uom: i.uom,
                     unit_price: i.unit_price,
-                    total_price: i.total_price  // Match DB column
+                    total_price: i.total_price,  // Match DB column
+                    do_section_id: (i as any).do_section_id || null,
+                    group_name: (i as any).group_name || null,
+                    temp_section_id: (i as any).do_section_id ? `temp-${deliverySections.find(s => s.id === (i as any).do_section_id)?.do_id}` : null,
                 }))
             };
 
@@ -731,6 +763,19 @@ export const InvoiceForm = () => {
                             </div>
                         </div>
                     </div>
+                </Card>
+
+                <Card>
+                    <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                        <span className="w-1 h-6 bg-blue-600 rounded-full"></span>
+                        Notes
+                    </h2>
+                    <textarea
+                        value={formData.notes}
+                        onChange={e => setFormData({ ...formData, notes: e.target.value })}
+                        className="w-full px-4 py-2.5 bg-white text-gray-900 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm hover:border-blue-400 placeholder:text-gray-400 min-h-[120px] text-sm"
+                        placeholder="Additional notes for this invoice..."
+                    />
                 </Card>
 
                 <div className="flex gap-4 justify-end pt-6 border-t border-gray-200 mt-8 sticky bottom-0 bg-gray-50/80 backdrop-blur-sm p-4 -mx-4 -mb-4 rounded-b-lg">

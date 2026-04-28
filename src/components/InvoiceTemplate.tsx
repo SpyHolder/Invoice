@@ -1,4 +1,5 @@
 import React, { forwardRef } from "react";
+import { CertificationFooter } from './CertificationFooter';
 import {
 	Invoice,
 	InvoiceItem,
@@ -50,8 +51,22 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
 		return (
 			<div
 				ref={ref}
-				className="p-8 bg-white text-black font-sans text-sm h-full mx-auto"
-				style={{ width: "210mm", minHeight: "297mm" }}
+				className="bg-white text-black font-sans text-sm mx-auto"
+				style={{ width: "210mm" }}
+			>
+				{/* Print-only fixed footer for every page */}
+				<CertificationFooter mode="print-fixed" />
+
+				{/* Suppress browser URL/title in print footer */}
+				<style>{`
+					@media print {
+						@page { margin: 0; }
+					}
+				`}</style>
+
+			<div
+				className="p-8 print-page"
+				style={{ width: "210mm", minHeight: "297mm", display: "flex", flexDirection: "column" }}
 			>
 				{/* Header Row */}
 				<div className="flex justify-between items-start mb-6">
@@ -171,7 +186,9 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
 										<td className="font-semibold pl-2 py-0.5">
 											Requestor
 										</td>
-										<td className="py-0.5"> - </td>
+										<td className="py-0.5">
+											{(invoice as any).requestor || "-"}
+										</td>
 									</tr>
 								</tbody>
 							</table>
@@ -472,26 +489,17 @@ export const InvoiceTemplate = forwardRef<HTMLDivElement, InvoiceTemplateProps>(
 					</table>
 				</div>
 
-				{/* Footer Notes */}
-				<div className="mt-4 text-[11px] text-gray-500">
-					<p className="mb-2">Please Note:</p>
-					<ol className="list-decimal pl-4 space-y-1">
-						<li>
-							Cheques should be made payable to{" "}
-							{company?.name || "CNK Tan Pte Ltd"} and crossed A/C
-							Payee Only.
-						</li>
-						<li>
-							Invoice not paid within payment terms of the invoice
-							will carry interest of 5% per month until settled.
-						</li>
-						<li>
-							All goods sold shall still remain the property of{" "}
-							{company?.name || "CNK Tan Pte Ltd"} until full
-							settlement has been by the company.
-						</li>
-					</ol>
-				</div>
+				{/* Notes */}
+				{invoice.notes && invoice.notes.trim() && (
+					<div className="mt-4 text-xs">
+						<p className="font-bold mb-2 text-gray-600">Notes:</p>
+						<p className="text-gray-500 whitespace-pre-line">{invoice.notes}</p>
+					</div>
+				)}
+
+					{/* Certification Footer - inline for screen preview */}
+				<CertificationFooter mode="inline" />
+			</div>
 			</div>
 		);
 	},

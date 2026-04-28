@@ -284,6 +284,7 @@ export const ViewQuotation = () => {
                         company={company}
                         termsContent={quotation.terms_content || ''}
                         bankDetails={bankAccount}
+                        customerSnapshot={(quotation as any).customer_snapshot ? (typeof (quotation as any).customer_snapshot === 'string' ? JSON.parse((quotation as any).customer_snapshot) : (quotation as any).customer_snapshot) : null}
                     />
                 </div>
             </div>

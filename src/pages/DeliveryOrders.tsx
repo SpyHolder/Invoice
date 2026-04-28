@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Eye, Edit, FileText, Copy } from 'lucide-react';
+import { Plus, Eye, Edit, Trash2 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { SearchInput } from '../components/ui/SearchInput';
@@ -13,6 +13,11 @@ export const DeliveryOrders = () => {
     const [orders, setOrders] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
+
+    // Delete confirmation state
+    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [deleteDO, setDeleteDO] = useState<any>(null);
+    const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
         fetchOrders();
@@ -52,8 +57,6 @@ export const DeliveryOrders = () => {
                 await restoreStockForDO(doRecord.id);
                 showToast(`Delivery Order marked as delivered! Stock restored.`, 'success');
             } else if (previousStatus === 'delivered' && newStatus !== 'delivered') {
-                // If reverting from delivered, we might want to deduct again
-                // For now just show a warning
                 showToast(`Delivery Order status updated to ${newStatus}. Note: Stock was previously restored.`, 'warning');
             } else {
                 showToast(`Delivery Order status updated to ${newStatus}`, 'success');
@@ -69,7 +72,6 @@ export const DeliveryOrders = () => {
     // Restore/increase stock for DO items when delivered
     const restoreStockForDO = async (doId: string) => {
         try {
-            // Get DO items
             const doRecord = await api.get<any>(`/delivery-orders/${doId}`);
             const doItems = doRecord?.items;
             
@@ -78,12 +80,10 @@ export const DeliveryOrders = () => {
             for (const doItem of doItems) {
                 if (!doItem.description || !doItem.quantity) continue;
 
-                // Find matching inventory item by name
                 const items = await api.get<any[]>(`/items`);
                 const invItem = items?.find(i => i.name?.toLowerCase().includes(doItem.description.toLowerCase()));
 
                 if (invItem) {
-                    // Increase stock
                     await api.put(`/items/${invItem.id}`, { stock: (invItem.stock || 0) + doItem.quantity });
                 }
             }
@@ -92,7 +92,27 @@ export const DeliveryOrders = () => {
         }
     };
 
+    const handleDeleteDO = (doRecord: any) => {
+        setDeleteDO(doRecord);
+        setDeleteModalOpen(true);
+    };
 
+    const confirmDeleteDO = async () => {
+        if (!deleteDO) return;
+        setDeleting(true);
+        try {
+            await api.delete(`/delivery-orders/${deleteDO.id}`);
+            showToast(`Delivery Order ${deleteDO.do_number} deleted successfully`, 'success');
+            setDeleteModalOpen(false);
+            setDeleteDO(null);
+            fetchOrders();
+        } catch (error) {
+            console.error('Error deleting DO:', error);
+            showToast('Failed to delete delivery order', 'error');
+        } finally {
+            setDeleting(false);
+        }
+    };
 
     return (
         <div className="space-y-6">
@@ -184,18 +204,11 @@ export const DeliveryOrders = () => {
                                                         <Edit className="w-4 h-4" />
                                                     </button>
                                                     <button
-                                                        onClick={(e) => { e.stopPropagation(); navigate(`/invoices/new?so_id=${doRecord.quotation_id}`); }}
-                                                        className="p-1 text-gray-400 hover:text-green-600 transition-colors"
-                                                        title="Create Invoice"
+                                                        onClick={(e) => { e.stopPropagation(); handleDeleteDO(doRecord); }}
+                                                        className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                                                        title="Delete DO"
                                                     >
-                                                        <FileText className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); navigate(`/delivery-orders/new?duplicate=${doRecord.id}`); }}
-                                                        className="p-1 text-gray-400 hover:text-indigo-600 transition-colors"
-                                                        title="Duplicate DO"
-                                                    >
-                                                        <Copy className="w-4 h-4" />
+                                                        <Trash2 className="w-4 h-4" />
                                                     </button>
                                                 </div>
                                             </td>
@@ -207,6 +220,50 @@ export const DeliveryOrders = () => {
                     </div>
                 )}
             </Card>
+
+            {/* Delete DO Confirmation Modal */}
+            {deleteModalOpen && deleteDO && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 relative">
+                        <div className="mb-4">
+                            <div className="flex items-center gap-3 mb-3">
+                                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                                    <Trash2 className="w-5 h-5 text-red-600" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-gray-900">Delete Delivery Order?</h3>
+                                    <p className="text-sm text-gray-500">{deleteDO.do_number}</p>
+                                </div>
+                            </div>
+                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                                <p className="text-sm text-amber-800">
+                                    This delivery order will be permanently deleted. Items from the linked quotation will remain available for creating new delivery orders.
+                                </p>
+                            </div>
+                            <p className="text-sm text-gray-600">
+                                This action <span className="font-semibold text-red-600">cannot be undone</span>.
+                            </p>
+                        </div>
+                        <div className="flex justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => { setDeleteModalOpen(false); setDeleteDO(null); }}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={confirmDeleteDO}
+                                disabled={deleting}
+                                className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                            >
+                                {deleting ? 'Deleting...' : 'Delete DO'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

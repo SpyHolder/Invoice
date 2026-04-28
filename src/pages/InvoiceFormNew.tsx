@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { ArrowLeft, Check } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -10,9 +10,11 @@ import { useToast } from '../contexts/ToastContext';
 export const InvoiceFormNew = () => {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
+    const { id: editId } = useParams();
     const { showToast } = useToast();
 
     const [loading, setLoading] = useState(false);
+    const [isEditMode, setIsEditMode] = useState(false);
 
     // Data sources
     const [customers, setCustomers] = useState<Partner[]>([]);
@@ -31,6 +33,7 @@ export const InvoiceFormNew = () => {
         discount: 0,
         tax_rate: 9, // Default 9% GST
         notes: '',
+        requestor: '',
     });
 
     // Preview items from selected DOs
@@ -181,14 +184,106 @@ export const InvoiceFormNew = () => {
     // FIX 1: useEffect dependency array lengkap. `handleSOSelection`
     // sudah stable karena dibungkus useCallback.
     // ---------------------------------------------------------------
+    // Normalize date to YYYY-MM-DD (handles ISO timestamps)
+    const normalizeDate = (d: string | null | undefined): string => {
+        if (!d) return new Date().toISOString().split('T')[0];
+        if (d.includes('T')) return d.split('T')[0];
+        return d;
+    };
+
+    // Load existing invoice for edit mode
+    const loadInvoice = useCallback(async (invoiceId: string) => {
+        setLoading(true);
+        try {
+            const inv = await api.get<any>(`/invoices/${invoiceId}`);
+            if (!inv) throw new Error('Invoice not found');
+
+            setIsEditMode(true);
+
+            setFormData({
+                customer_id: inv.customer_id || '',
+                quotation_id: inv.quotation_id || '',
+                invoice_number: inv.invoice_number || '',
+                date: normalizeDate(inv.date),
+                due_date: normalizeDate(inv.due_date),
+                terms: inv.terms || '30 Days',
+                subject: inv.subject || '',
+                discount: parseFloat(inv.discount) || 0,
+                tax_rate: inv.tax && inv.subtotal ? Math.round((parseFloat(inv.tax) / (parseFloat(inv.subtotal) - parseFloat(inv.discount || '0'))) * 10000) / 100 : 9,
+                notes: inv.notes || '',
+                requestor: inv.requestor || '',
+            });
+
+            // Reconstruct previewItems from delivery_sections + items
+            if (inv.delivery_sections && inv.delivery_sections.length > 0) {
+                const sections: any[] = [];
+                const doIds: string[] = [];
+
+                for (const sec of inv.delivery_sections) {
+                    doIds.push(sec.do_id);
+                    // Fetch DO for its number
+                    let doNumber = sec.section_label || '';
+                    try {
+                        const doData = await api.get<any>(`/delivery-orders/${sec.do_id}`);
+                        if (doData) doNumber = doData.do_number || doNumber;
+                    } catch { /* ignore */ }
+
+                    // Get items for this section
+                    const sectionItems = (inv.items || []).filter((i: any) => i.do_section_id === sec.id);
+
+                    sections.push({
+                        section_number: sec.section_number,
+                        do_id: sec.do_id,
+                        do_number: doNumber,
+                        subject: sec.section_label || '',
+                        db_section_id: sec.id,
+                        items: sectionItems.map((i: any) => ({
+                            item_code: i.item_code || '',
+                            group_name: i.group_name || '',
+                            description: i.description || '',
+                            quantity: parseFloat(i.quantity) || 0,
+                            uom: i.uom || 'EA',
+                            unit_price: parseFloat(i.unit_price) || 0,
+                            total_price: parseFloat(i.total_price) || 0,
+                            do_section_id: i.do_section_id || null,
+                        }))
+                    });
+                }
+
+                setSelectedDOs(doIds);
+                setPreviewItems(sections);
+            }
+
+            // Fetch quotations for customer dropdown
+            if (inv.customer_id) {
+                await fetchQuotations(inv.customer_id);
+                // Load DO list for the quotation
+                if (inv.quotation_id) {
+                    await fetchDeliveryOrders(inv.quotation_id, false);
+                }
+            }
+
+        } catch (error) {
+            console.error('Error loading invoice:', error);
+            showToast('Failed to load invoice', 'error');
+        } finally {
+            setLoading(false);
+        }
+    }, [fetchQuotations, fetchDeliveryOrders, showToast]);
+
     useEffect(() => {
         fetchCustomers();
-        const soIdParam = searchParams.get('so_id');
 
-        if (soIdParam) {
-            handleQuotationSelection(soIdParam);
+        if (editId) {
+            // Edit mode: load existing invoice
+            loadInvoice(editId);
+        } else {
+            const soIdParam = searchParams.get('so_id');
+            if (soIdParam) {
+                handleQuotationSelection(soIdParam);
+            }
         }
-    }, [searchParams, fetchCustomers, handleQuotationSelection]);
+    }, [editId, searchParams, fetchCustomers, handleQuotationSelection, loadInvoice]);
 
     const handleCustomerChange = async (custId: string) => {
         setFormData(prev => ({ ...prev, customer_id: custId, quotation_id: '' }));
@@ -226,24 +321,12 @@ export const InvoiceFormNew = () => {
         return { subtotal, taxAmount, grandTotal, safeDiscount };
     };
 
-    // ---------------------------------------------------------------
-    // FIX 8: due_date otomatis update saat `date` berubah,
-    // berdasarkan angka hari dari `terms`.
-    // ---------------------------------------------------------------
-    useEffect(() => {
-        const match = formData.terms.match(/(\d+)/);
-        const days = match ? parseInt(match[1], 10) : 30;
-        const newDueDate = new Date(formData.date);
-        newDueDate.setDate(newDueDate.getDate() + days);
-        setFormData(prev => ({
-            ...prev,
-            due_date: newDueDate.toISOString().split('T')[0]
-        }));
-    }, [formData.date, formData.terms]);
+    // Due date auto-sync removed — now only +30 Days button controls it.
+    // This prevents the useEffect from overriding manual due_date edits.
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (selectedDOs.length === 0) {
+        if (selectedDOs.length === 0 && !isEditMode) {
             showToast('Please select at least one delivery order', 'error');
             return;
         }
@@ -253,55 +336,86 @@ export const InvoiceFormNew = () => {
         try {
             const { subtotal, taxAmount, grandTotal, safeDiscount } = calculateTotals();
 
-            // -------------------------------------------------------
-            // FIX 5: Ganti `count` dengan query `max` untuk menghindari
-            // race condition pada pembuatan invoice number.
-            // -------------------------------------------------------
-            const allInvoices = await api.get<any[]>('/invoices');
-            
-            let nextSeq = 1;
-            if (allInvoices && allInvoices.length > 0) {
-                const lastInvoice = allInvoices[0];
-                if (lastInvoice?.invoice_number) {
-                    const parts = lastInvoice.invoice_number.split('-');
-                    const lastNum = parseInt(parts[parts.length - 1], 10);
-                    if (!isNaN(lastNum)) nextSeq = lastNum + 1;
+            // Build delivery sections & items from previewItems
+            const deliverySections = previewItems.map(p => ({
+                do_id: p.do_id,
+                section_number: p.section_number,
+                section_label: p.subject,
+                temp_id: `temp-${p.do_id}`,
+                ...(p.db_section_id ? { id: p.db_section_id } : {}),
+            }));
+
+            const items = previewItems.flatMap(p => p.items.map((i: any) => ({
+                ...i,
+                temp_section_id: `temp-${p.do_id}`,
+                ...(i.do_section_id ? { do_section_id: i.do_section_id } : {}),
+            })));
+
+            if (isEditMode && editId) {
+                // ---- EDIT MODE ----
+                const invoiceData = {
+                    invoice_number: formData.invoice_number,
+                    customer_id: formData.customer_id,
+                    quotation_id: formData.quotation_id || null,
+                    date: formData.date,
+                    due_date: formData.due_date,
+                    terms: formData.terms,
+                    subject: formData.subject,
+                    subtotal,
+                    discount: safeDiscount,
+                    tax: taxAmount,
+                    grand_total: grandTotal,
+                    invoice_type: 'do_based',
+                    total_sections: previewItems.length,
+                    notes: formData.notes,
+                    requestor: formData.requestor,
+                    delivery_sections: deliverySections,
+                    items,
+                };
+
+                await api.put(`/invoices/${editId}`, invoiceData);
+                showToast('Invoice updated successfully!', 'success');
+                navigate(`/invoices/${editId}`);
+
+            } else {
+                // ---- CREATE MODE ----
+                const allInvoices = await api.get<any[]>('/invoices');
+                let nextSeq = 1;
+                if (allInvoices && allInvoices.length > 0) {
+                    const lastInvoice = allInvoices[0];
+                    if (lastInvoice?.invoice_number) {
+                        const parts = lastInvoice.invoice_number.split('-');
+                        const lastNum = parseInt(parts[parts.length - 1], 10);
+                        if (!isNaN(lastNum)) nextSeq = lastNum + 1;
+                    }
                 }
+                const invoiceNumber = `CNK-INV-${String(nextSeq).padStart(8, '0')}`;
+
+                const invoiceData = {
+                    invoice_number: invoiceNumber,
+                    customer_id: formData.customer_id,
+                    quotation_id: formData.quotation_id,
+                    date: formData.date,
+                    due_date: formData.due_date,
+                    terms: formData.terms,
+                    subject: formData.subject,
+                    subtotal,
+                    discount: safeDiscount,
+                    tax: taxAmount,
+                    grand_total: grandTotal,
+                    payment_status: 'unpaid',
+                    invoice_type: 'do_based',
+                    total_sections: selectedDOs.length,
+                    notes: formData.notes,
+                    requestor: formData.requestor,
+                    delivery_sections: deliverySections,
+                    items,
+                };
+
+                const data = await api.post<any>('/invoices', invoiceData);
+                showToast('Invoice created successfully!', 'success');
+                navigate(`/invoices/${data.id}`);
             }
-            const invoiceNumber = `CNK-INV-${String(nextSeq).padStart(8, '0')}`;
-
-            const invoiceData = {
-                invoice_number: invoiceNumber,
-                customer_id: formData.customer_id,
-                quotation_id: formData.quotation_id,
-                date: formData.date,
-                due_date: formData.due_date,
-                terms: formData.terms,
-                subject: formData.subject,
-                subtotal,
-                discount: safeDiscount,
-                tax: taxAmount,
-                grand_total: grandTotal,
-                payment_status: 'unpaid',
-                invoice_type: 'do_based',
-                total_sections: selectedDOs.length,
-                notes: formData.notes,
-                delivery_sections: previewItems.map(p => ({
-                    do_id: p.do_id,
-                    section_number: p.section_number,
-                    section_label: p.subject,
-                    temp_id: `temp-${p.do_id}`
-                })),
-                items: previewItems.flatMap(p => p.items.map((i: any) => ({
-                    ...i,
-                    temp_section_id: `temp-${p.do_id}`
-                })))
-            };
-
-            const data = await api.post<any>('/invoices', invoiceData);
-
-            showToast('Invoice created successfully!', 'success');
-            navigate(`/invoices/${data.id}`);
 
         } catch (error: any) {
             console.error('Error saving invoice:', error);
@@ -325,7 +439,7 @@ export const InvoiceFormNew = () => {
 
             <Card>
                 <h1 className="text-2xl font-bold mb-6">
-                    Create Invoice from Delivery Orders
+                    {isEditMode ? 'Edit Invoice' : 'Create Invoice from Delivery Orders'}
                 </h1>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
@@ -420,13 +534,34 @@ export const InvoiceFormNew = () => {
                         </div>
                         <div>
                             <label className="block text-sm font-medium mb-2">Due Date *</label>
-                            <input
-                                type="date"
-                                className="w-full border border-gray-300 rounded-lg p-3 bg-white text-black focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                                value={formData.due_date}
-                                onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
-                                required
-                            />
+                            <div className="flex gap-2">
+                                <input
+                                    type="date"
+                                    className="flex-1 border border-gray-300 rounded-lg p-3 bg-white text-black focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                    value={formData.due_date}
+                                    onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
+                                    required
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setFormData(prev => {
+                                            const baseDate = prev.date || new Date().toISOString().split('T')[0];
+                                            // Manually parse YYYY-MM-DD to avoid browser Date parsing issues
+                                            const parts = baseDate.split('-');
+                                            const year = parseInt(parts[0], 10);
+                                            const month = parseInt(parts[1], 10) - 1; // JS months are 0-based
+                                            const day = parseInt(parts[2], 10);
+                                            const d = new Date(year, month, day + 30);
+                                            const dueDateStr = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+                                            return { ...prev, due_date: dueDateStr, terms: '30 Days' };
+                                        });
+                                    }}
+                                    className="px-3 py-2 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 hover:border-blue-300 transition-all whitespace-nowrap"
+                                >
+                                    +30 Days
+                                </button>
+                            </div>
                         </div>
                         <div>
                             <label className="block text-sm font-medium mb-2">Payment Terms</label>
@@ -440,15 +575,27 @@ export const InvoiceFormNew = () => {
                         </div>
                     </div>
 
-                    <div>
-                        <label className="block text-sm font-medium mb-2">Subject</label>
-                        <input
-                            type="text"
-                            className="w-full border border-gray-300 rounded-lg p-3 bg-white text-black focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                            value={formData.subject}
-                            onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                            placeholder="Invoice subject"
-                        />
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium mb-2">Subject</label>
+                            <input
+                                type="text"
+                                className="w-full border border-gray-300 rounded-lg p-3 bg-white text-black focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                value={formData.subject}
+                                onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                                placeholder="Invoice subject"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-2">Requestor</label>
+                            <input
+                                type="text"
+                                className="w-full border border-gray-300 rounded-lg p-3 bg-white text-black focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                                value={formData.requestor}
+                                onChange={(e) => setFormData({ ...formData, requestor: e.target.value })}
+                                placeholder="Requestor name"
+                            />
+                        </div>
                     </div>
 
                     {/* Preview Items by Section */}
@@ -565,9 +712,9 @@ export const InvoiceFormNew = () => {
                         <Button
                             type="submit"
                             loading={loading}
-                            disabled={selectedDOs.length === 0}
+                            disabled={!isEditMode && selectedDOs.length === 0}
                         >
-                            Create Invoice
+                            {isEditMode ? 'Save Invoice' : 'Create Invoice'}
                         </Button>
                     </div>
                 </form>

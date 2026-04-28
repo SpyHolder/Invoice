@@ -156,6 +156,7 @@ export interface Invoice {
     billing_type?: string;
     invoice_type?: string;
     total_sections?: number;
+    notes?: string | null;
     customer?: Partner;
 }
 

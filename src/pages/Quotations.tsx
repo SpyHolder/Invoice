@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, FileCheck, Eye, Edit2, Trash2, Copy, Package, ShoppingCart, MoreHorizontal, FileText, X } from 'lucide-react';
+import { Plus, FileCheck, Eye, Edit2, Trash2, Copy, Package, ShoppingCart, MoreHorizontal, FileText, X, AlertTriangle } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Quotation } from '../types';
@@ -36,6 +36,12 @@ export const Quotations = () => {
     const [confirmQuotation, setConfirmQuotation] = useState<Quotation | null>(null);
     const [poNumberInput, setPoNumberInput] = useState('');
     const [confirming, setConfirming] = useState(false);
+
+    // Delete confirmation modal state
+    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [deleteQuotation, setDeleteQuotation] = useState<Quotation | null>(null);
+    const [linkedDOs, setLinkedDOs] = useState<{ id: string; do_number: string; date: string; status: string }[]>([]);
+    const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
         fetchQuotations();
@@ -81,14 +87,37 @@ export const Quotations = () => {
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm('Are you sure you want to delete this quotation?')) return;
+        const quotation = quotations.find(q => q.id === id);
+        if (!quotation) return;
+        
         try {
-            await api.delete(`/quotations/${id}`);
-            showToast('Quotation deleted successfully', 'success');
+            // Check for linked DOs first
+            const dos = await api.get<any[]>(`/quotations/${id}/linked-dos`);
+            // Always use modal for delete confirmation
+            setDeleteQuotation(quotation);
+            setLinkedDOs(dos || []);
+            setDeleteModalOpen(true);
+        } catch (error) {
+            console.error('Error checking/deleting quotation:', error);
+            showToast('Failed to delete quotation', 'error');
+        }
+    };
+
+    const confirmDelete = async () => {
+        if (!deleteQuotation) return;
+        setDeleting(true);
+        try {
+            await api.delete(`/quotations/${deleteQuotation.id}`);
+            showToast(linkedDOs.length > 0 ? `Quotation and ${linkedDOs.length} linked DO(s) deleted successfully` : 'Quotation deleted successfully', 'success');
+            setDeleteModalOpen(false);
+            setDeleteQuotation(null);
+            setLinkedDOs([]);
             fetchQuotations();
         } catch (error) {
             console.error('Error deleting quotation:', error);
             showToast('Failed to delete quotation', 'error');
+        } finally {
+            setDeleting(false);
         }
     };
 
@@ -390,6 +419,89 @@ export const Quotations = () => {
                             >
                                 {confirming ? 'Confirming...' : 'Confirm Quotation'}
                             </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Warning Modal - shows linked DOs before cascade deletion */}
+            {deleteModalOpen && deleteQuotation && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 relative">
+                        <button
+                            onClick={() => { setDeleteModalOpen(false); setDeleteQuotation(null); setLinkedDOs([]); }}
+                            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+
+                        <div className="mb-4">
+                            <div className="flex items-center gap-3 mb-3">
+                                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                                    <AlertTriangle className="w-5 h-5 text-red-600" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-gray-900">Delete Quotation?</h3>
+                                    <p className="text-sm text-gray-500">
+                                        {deleteQuotation.quotation_number || deleteQuotation.quote_number}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {linkedDOs.length > 0 ? (
+                                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                                    <p className="text-sm text-red-800 font-medium mb-2">
+                                        ⚠️ This quotation has {linkedDOs.length} linked Delivery Order(s) that will also be permanently deleted:
+                                    </p>
+                                    <div className="max-h-40 overflow-y-auto space-y-1.5">
+                                        {linkedDOs.map((doItem) => (
+                                            <div key={doItem.id} className="flex items-center justify-between text-xs bg-white border border-red-100 rounded px-3 py-2">
+                                                <span className="font-medium text-gray-900">{doItem.do_number}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-gray-500">
+                                                        {doItem.date ? new Date(doItem.date).toLocaleDateString() : '-'}
+                                                    </span>
+                                                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                                                        doItem.status === 'delivered' ? 'bg-green-100 text-green-700' :
+                                                        doItem.status === 'cancelled' ? 'bg-gray-100 text-gray-500' :
+                                                        'bg-yellow-100 text-yellow-700'
+                                                    }`}>
+                                                        {doItem.status || 'pending'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                                    <p className="text-sm text-amber-800">
+                                        Are you sure you want to delete this quotation? This action cannot be undone.
+                                    </p>
+                                </div>
+                            )}
+
+                            <p className="text-sm text-gray-600">
+                                This action <span className="font-semibold text-red-600">cannot be undone</span>. All related data will be permanently removed.
+                            </p>
+                        </div>
+
+                        <div className="flex justify-end gap-3">
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => { setDeleteModalOpen(false); setDeleteQuotation(null); setLinkedDOs([]); }}
+                            >
+                                Cancel
+                            </Button>
+                            <button
+                                type="button"
+                                onClick={confirmDelete}
+                                disabled={deleting}
+                                className="px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                            >
+                                {deleting ? 'Deleting...' : linkedDOs.length > 0 ? `Delete Quotation & ${linkedDOs.length} DO(s)` : 'Delete Quotation'}
+                            </button>
                         </div>
                     </div>
                 </div>
